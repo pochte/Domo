@@ -454,24 +454,35 @@ function Party_Join_Begin(name)
     end, 0)
     return true
 end
--- Incoming tell: "chicken nuggets"
+-- Incoming tell containing the phrase (default "chicken nuggets").
+-- Case, punctuation and extra words don't matter ("Chicken nuggets pls!" works);
+-- the phrase just has to appear as whole words.
+local function Phrase_Words(text)
+    local t = string.lower(text or ''):gsub('[^%w]+', ' ')
+    return ' ' .. (t:match('^%s*(.-)%s*$')) .. ' '
+end
 windower.register_event('chat message', function(message, sender, mode, gm)
     if mode ~= 3 or not message or not sender then
-        return
-    end
-    if not Start_Engine or party_join_active then
         return
     end
     local cfg = Join_Config()
     if not cfg.enabled then
         return
     end
-    local text = string.lower(message):gsub('%s+', ' '):match('^%s*(.-)%s*$')
-    if text ~= cfg.phrase then
+    if not string.find(Phrase_Words(message), Phrase_Words(cfg.phrase), 1, true) then
         return
     end
     local me = windower.ffxi.get_player()
     if me and string.lower(me.name) == string.lower(sender) then
+        return
+    end
+    -- These used to fail silently; now you can see why nothing happened.
+    if not Start_Engine then
+        Say('Got the party phrase from ' .. sender .. ' but Lazy is not started (//lazy start).')
+        return
+    end
+    if party_join_active then
+        Say('Got the party phrase from ' .. sender .. ' but a party join is already running (//lazy join cancel).')
         return
     end
     if #cfg.allowed > 0 then
