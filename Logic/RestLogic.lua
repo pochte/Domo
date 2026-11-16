@@ -111,6 +111,8 @@ local function Rest_Tick()
             return
         end
     end
+    -- SMN decides its own resting (Logic/smn_logic.lua)
+    if current_job == 'SMN' then return end
     -- ACTUAL RESTING
     -- RDM/NIN does not rest; other eligible job/subjob combinations can.
     local should_rest_for_job = REST_ELIGIBLE_JOBS[current_job]

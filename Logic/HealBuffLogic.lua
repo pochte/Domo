@@ -334,6 +334,8 @@ function Buff_Tick()
     if not player then return end
     local now = os.clock()
     Update_Job_Profile()
+    -- SMN: avatars, wards, rage, Favor, Siphon (Logic/smn_logic.lua)
+    if current_job == 'SMN' and SMN_Tick and SMN_Tick() then return end
     -- 1. DEBUFF LOGIC :Once per mob
     if active_profile.debuffs then
         Ensure_Debuff_Target()

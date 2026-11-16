@@ -34,6 +34,11 @@ if profile == 'COR' and not loaded_job_logic.COR then
 dofile(windower.addon_path .. 'Logic/rolls.lua')
 loaded_job_logic.COR = true
 end
+-- SMN logic (avatars, wards, rage, Favor, Siphon)
+if profile == 'SMN' and not loaded_job_logic.SMN then
+dofile(windower.addon_path .. 'Logic/smn_logic.lua')
+loaded_job_logic.SMN = true
+end
 -- Mage jobs: healing/buff logic + resting
 if MAGE_LOGIC_JOBS[profile] and not loaded_job_logic.MAGE then
 dofile(windower.addon_path .. 'Logic/HealBuffLogic.lua')
@@ -131,7 +136,7 @@ active_profile = nil
 JOB_PROFILES = {}
 local profile_list = {
 'RDM', 'GEO', 'BLM', 'SCH', 'DNC',
-'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'
+'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'SMN', 'DEFAULT'
 }
 for _, job in ipairs(profile_list) do
 local path = windower.addon_path .. 'profiles/' .. job .. '.lua'
