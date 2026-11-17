@@ -1435,15 +1435,15 @@ and Get_Burst_Spell(target)
 then
 return
 end
+-- Haste Samba (DNC or /DNC): every 90s, before the DNC rotation or any chain.
+if Try_Haste_Samba and Try_Haste_Samba(target) then
+return
+end
 if active_profile
 and active_profile.dnc_rotation
 and current_job == 'DNC'
 then
 if Try_DNC_Actions() then return end
-end
--- Sub-job samba (Haste Samba) goes up before any chain is opened.
-if current_job ~= 'DNC' and Try_Haste_Samba and Try_Haste_Samba(target) then
-return
 end
 if target
 and target.distance

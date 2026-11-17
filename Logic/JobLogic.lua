@@ -279,6 +279,8 @@ local function Self_Ability_Note(name, text)
     end
 end
 function Self_Ability_Gates_Ok(ab, player)
+    -- Haste Samba is handled by Try_Haste_Samba (90s timer) in Combat().
+    if ab.name == 'Haste Samba' then return false end
     local def = res.job_abilities:with('name', ab.name)
     local is_samba = def and def.type == 'Samba'
     local tp = (player.vitals and player.vitals.tp) or 0
@@ -294,28 +296,43 @@ function Self_Ability_Gates_Ok(ab, player)
     Self_Ability_Note(ab.name, 'sending (TP ' .. tp .. ')')
     return true
 end
--- Samba from a sub job (e.g. THF/DNC Haste Samba). Called by Combat() BEFORE a
--- weaponskill chain is opened, so the samba goes up first; the chain just waits
--- for TP to build back up. Never interrupts a chain that is already running.
+-- HASTE SAMBA: DNC main or /DNC. Recast every 90 seconds, no buff-icon checks.
+-- If TP is short (or the cast didn't land) it just keeps trying until it does.
+-- Called from Combat() before any chain is opened and before the DNC rotation;
+-- never interrupts a skillchain window that is already open.
+local HASTE_SAMBA_INTERVAL = 90
+local haste_samba_last = nil
+local haste_samba_seen = false
 function Try_Haste_Samba(target)
-    if not haste_samba_active or not subjob_abilities then return false end
-    if isBusy > 0 or isCasting then return false end
     local player = windower.ffxi.get_player()
     if not player then return false end
-    if target and sc_active and sc_active(target.id) then return false end
-    local list = subjob_abilities[player.sub_job]
-    if not list then return false end
-    for _, ab in ipairs(list) do
-        local def = res.job_abilities:with('name', ab.name)
-        if def and def.type == 'Samba'
-            and Can_Cast_Ability(ab.name)
-            and Self_Ability_Gates_Ok(ab, player)
-        then
-            Cast_Ability(ab.name)
-            return true
+    if player.main_job ~= 'DNC' and player.sub_job ~= 'DNC' then return false end
+    local now = os.clock()
+    -- Sent but never showed up (not enough TP at the server, rejected, ...): retry.
+    if haste_samba_last then
+        if buffactive and buffactive['Haste Samba'] then haste_samba_seen = true end
+        if not haste_samba_seen and now - haste_samba_last >= 5 then
+            haste_samba_last = nil
         end
     end
-    return false
+    if haste_samba_last and now - haste_samba_last < HASTE_SAMBA_INTERVAL then
+        return false
+    end
+    if isBusy > 0 or isCasting then return false end
+    if player.status ~= 1 then return false end -- engaged only; stay quiet out of combat
+    if target and sc_active and sc_active(target.id) then return false end
+    if not Can_Cast_Ability('Haste Samba') then return false end
+    local def = res.job_abilities:with('name', 'Haste Samba')
+    local need = (def and def.tp_cost) or 350
+    local tp = (player.vitals and player.vitals.tp) or 0
+    if tp < need then
+        Self_Ability_Note('Haste Samba', 'waiting for TP (' .. tp .. '/' .. need .. ')')
+        return false
+    end
+    haste_samba_last = now
+    haste_samba_seen = false
+    Self_Ability_Note('Haste Samba', 'sending (TP ' .. tp .. ')')
+    return Cast_Ability('Haste Samba')
 end
 function Cast_Ability(ability_name)
     if not Can_Cast_Ability(ability_name) then return false end

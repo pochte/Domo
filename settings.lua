@@ -168,6 +168,7 @@ targeting = {
         'Colibri',
         'Bat',
         'Apex Eft',
+        'Locus Dire Bat',
     },
     -- Only target mobs nobody has claimed.
     only_unclaimed = true,
