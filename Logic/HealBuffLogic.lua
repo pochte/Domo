@@ -550,7 +550,7 @@ function Buff_Tick()
                     mp_ok = false
                 end
             end
-            if pet_ok and mp_ok and Can_Cast_Ability(ab.name) then
+            if pet_ok and mp_ok and Can_Cast_Ability(ab.name) and Self_Ability_Gates_Ok(ab, player) then
                 Cast_Ability(ab.name)
                 self_ability_last_cast[ab.name] = now
                 return

@@ -254,13 +254,93 @@ end
 -- enemy-only ones (Provoke, Steal, Box Step...) go on <t>. Sending an
 -- enemy-only JA at <me> gets "You cannot attack that target."
 -- targets bitmask: 1 self, 2 player, 4 party, 8 ally, 16 npc, 32 enemy.
+-- Finishing Move stacks (DNC main or /DNC). The buffs are 'Finishing Move 1'
+-- .. 'Finishing Move 5' and 'Finishing Move (6+)'; there is no plain
+-- 'Finishing Move' buff.
+function Finishing_Move_Count()
+    if not buffactive then return 0 end
+    if buffactive['Finishing Move (6+)'] then return 6 end
+    for n = 5, 1, -1 do
+        if buffactive['Finishing Move ' .. n] then return n end
+    end
+    return 0
+end
+-- Gates for self abilities (Lazy.lua / HealBuffLogic.lua self-ability loops).
+-- Sambas cost TP and need you engaged, and a rejected JA never starts its recast,
+-- so without these checks Lazy sent Haste Samba out of combat, got rejected, and
+-- then waited the whole interval. Optional per-entry fields override the defaults:
+--   require_engaged, min_tp, skip_if_buff
+local self_ability_note_last = {}
+local function Self_Ability_Note(name, text)
+    local now = os.clock()
+    if now - (self_ability_note_last[name] or -99) >= 10 then
+        self_ability_note_last[name] = now
+        windower.add_to_chat(207, '[Lazy] ' .. name .. ': ' .. text)
+    end
+end
+function Self_Ability_Gates_Ok(ab, player)
+    local def = res.job_abilities:with('name', ab.name)
+    local is_samba = def and def.type == 'Samba'
+    local tp = (player.vitals and player.vitals.tp) or 0
+    local need_tp = ab.min_tp or (is_samba and def.tp_cost) or 0
+    -- Out of combat: stay quiet (sambas need you engaged anyway).
+    if (ab.require_engaged or is_samba) and player.status ~= 1 then return false end
+    local skip = ab.skip_if_buff or (is_samba and ab.name)
+    if skip and buffactive and buffactive[skip] then return false end
+    if need_tp > 0 and tp < need_tp then
+        Self_Ability_Note(ab.name, 'waiting for TP (' .. tp .. '/' .. need_tp .. ')')
+        return false
+    end
+    Self_Ability_Note(ab.name, 'sending (TP ' .. tp .. ')')
+    return true
+end
+-- Samba from a sub job (e.g. THF/DNC Haste Samba). Called by Combat() BEFORE a
+-- weaponskill chain is opened, so the samba goes up first; the chain just waits
+-- for TP to build back up. Never interrupts a chain that is already running.
+function Try_Haste_Samba(target)
+    if not haste_samba_active or not subjob_abilities then return false end
+    if isBusy > 0 or isCasting then return false end
+    local player = windower.ffxi.get_player()
+    if not player then return false end
+    if target and sc_active and sc_active(target.id) then return false end
+    local list = subjob_abilities[player.sub_job]
+    if not list then return false end
+    for _, ab in ipairs(list) do
+        local def = res.job_abilities:with('name', ab.name)
+        if def and def.type == 'Samba'
+            and Can_Cast_Ability(ab.name)
+            and Self_Ability_Gates_Ok(ab, player)
+        then
+            Cast_Ability(ab.name)
+            return true
+        end
+    end
+    return false
+end
 function Cast_Ability(ability_name)
     if not Can_Cast_Ability(ability_name) then return false end
     local ability = res.job_abilities:with('name', ability_name)
-    local mask = ability and ability.targets or 1
     local tgt = '<me>'
-    if mask % 2 < 1 and mask >= 32 then
-        tgt = '<t>'
+    local t = ability and ability.targets
+    if type(t) == 'table' then
+        -- Windower's resources library turns the bitmask into a set such as
+        -- S{'Self'} or S{'Enemy'}. (Doing arithmetic on it is what threw
+        -- "attempt to perform arithmetic on local 'mask'" and killed every
+        -- Cast_Ability call, including Haste Samba and the THF buffs.)
+        local function has(name)
+            if t[name] then return true end
+            for _, v in pairs(t) do
+                if v == name then return true end
+            end
+            return false
+        end
+        if has('Enemy') and not has('Self') then
+            tgt = '<t>'
+        end
+    elseif type(t) == 'number' then
+        if t % 2 < 1 and t >= 32 then
+            tgt = '<t>'
+        end
     end
     windower.send_command(
         'input /ja "' .. ability_name .. '" ' .. tgt

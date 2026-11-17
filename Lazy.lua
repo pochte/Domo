@@ -877,7 +877,7 @@ if player.vitals.mpp > ab.max_mp_percent then
 mp_ok = false
 end
 end
-if pet_ok and mp_ok and Can_Cast_Ability(ab.name) then
+if pet_ok and mp_ok and Can_Cast_Ability(ab.name) and Self_Ability_Gates_Ok(ab, player) then
 Cast_Ability(ab.name)
 self_ability_last_cast[ab.name] = now
 return
@@ -1146,9 +1146,14 @@ end
 end
 end
 end
+last_buff_tick_error = nil
 function Buff_Monitor()
 while Start_Engine do
-pcall(Buff_Tick)
+local ok, err = pcall(Buff_Tick)
+if not ok and tostring(err) ~= last_buff_tick_error then
+last_buff_tick_error = tostring(err)
+windower.add_to_chat(167, '[Lazy] Buff_Tick error: ' .. last_buff_tick_error)
+end
 coroutine.sleep(1)
 end
 end

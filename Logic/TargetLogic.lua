@@ -1441,6 +1441,10 @@ and current_job == 'DNC'
 then
 if Try_DNC_Actions() then return end
 end
+-- Sub-job samba (Haste Samba) goes up before any chain is opened.
+if current_job ~= 'DNC' and Try_Haste_Samba and Try_Haste_Samba(target) then
+return
+end
 if target
 and target.distance
 and math.sqrt(target.distance) <= 3
@@ -1477,11 +1481,23 @@ and target.distance
 and math.sqrt(target.distance) <= 3
 then
 local recasts = windower.ffxi.get_ability_recasts()
+-- Each needed buff gets ONE attempt per 15s. A rejected JA never starts its
+-- recast (and some entries, like Box Step / Reverse Flourish, never show up
+-- as a buff on you), so without this throttle the loop re-sent them every
+-- tick and the opener below was starved until 3000 TP.
+needed_buff_try = needed_buff_try or {}
+local buff_rules = (active_profile and active_profile.needed_buff_rules) or {}
 for _, ability_name in ipairs(Get_Needed_Buffs() or {}) do
-if not buffactive[ability_name] then
+local rule = buff_rules[ability_name] or {}
+local fm_ok = (not rule.min_finishing_moves)
+or (Finishing_Move_Count() >= rule.min_finishing_moves)
+if not buffactive[ability_name]
+and fm_ok
+and (os.clock() - (needed_buff_try[ability_name] or 0)) >= (rule.interval or 15) then
 if ability_name == 'Food' then
 local food_item = Get_Food()
 if food_item then
+needed_buff_try[ability_name] = os.clock()
 windower.send_command(
 'input /item "' .. food_item .. '" <me>'
 )
@@ -1494,6 +1510,7 @@ local ability = res.job_abilities:with(
 ability_name
 )
 if ability and recasts[ability.recast_id] == 0 then
+needed_buff_try[ability_name] = os.clock()
 Cast_Ability(ability_name)
 return
 end

@@ -94,12 +94,8 @@ function Try_DNC_Actions()
         dnc_last_target_id = target_id
     end
     -- HASTE SAMBA 
-    if not buffactive['Haste Samba']
-        and Can_Cast_Ability('Haste Samba') then
-        windower.send_command(
-            'input /ja "Haste Samba" <me>'
-        )
-        isBusy = Action_Delay
+    -- (Combat() already calls Try_Haste_Samba before this rotation runs.)
+    if Try_Haste_Samba and Try_Haste_Samba(target) then
         return true
     end
     -- EMERGENCY WALTZ 

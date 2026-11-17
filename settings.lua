@@ -191,7 +191,7 @@ subjob_abilities = {
     DNC = {
         {
             name = 'Haste Samba',
-            interval = 2,
+            interval = 0.1,   -- retry throttle only; skipped while the buff is up
         },
     },
 }
