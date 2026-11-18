@@ -34,11 +34,6 @@ if profile == 'COR' and not loaded_job_logic.COR then
 dofile(windower.addon_path .. 'Logic/rolls.lua')
 loaded_job_logic.COR = true
 end
--- SMN logic (avatars, wards, rage, Favor, Siphon)
-if profile == 'SMN' and not loaded_job_logic.SMN then
-dofile(windower.addon_path .. 'Logic/smn_logic.lua')
-loaded_job_logic.SMN = true
-end
 -- Mage jobs: healing/buff logic + resting
 if MAGE_LOGIC_JOBS[profile] and not loaded_job_logic.MAGE then
 dofile(windower.addon_path .. 'Logic/HealBuffLogic.lua')
@@ -136,7 +131,7 @@ active_profile = nil
 JOB_PROFILES = {}
 local profile_list = {
 'RDM', 'GEO', 'BLM', 'SCH', 'DNC',
-'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'SMN', 'DEFAULT'
+'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'
 }
 for _, job in ipairs(profile_list) do
 local path = windower.addon_path .. 'profiles/' .. job .. '.lua'
@@ -265,6 +260,9 @@ local matches = action.Param == pending_cast.spell_id
 local reaction = action['Target 1 Action 1 Reaction']
 if matches and reaction == 0 then
 pending_cast.store[pending_cast.key] = pending_cast.sent_at
+if pending_cast.geo_summon and Geo_Confirm_Luopan_Summon then
+Geo_Confirm_Luopan_Summon(pending_cast.geo_blaze)
+end
 end
 pending_cast = nil
 end
@@ -344,7 +342,6 @@ print('//lazy range <yalms>')
 print('//lazy burstmode   (BLM/SCH: nuke only during magic burst)')
 print('//lazy freenuke    (BLM/SCH: tier IV and lower on the target, V/VI for burst)')
 print('//lazy chainmode   (fire the full ordered ws_sc_chain)')
-print('//lazy finisher on/off/<hp%>  (kill a nearly-dead mob now: WS or Tier IV/III nuke)')
 print('//lazy partychain  (continue any open skillchain with the best weaponskill)')
 print('//lazy openmode    (opener + closers only)')
 print('//lazy retrust')
@@ -534,24 +531,66 @@ settings.autotarget = true
 windower.add_to_chat(3, '[Lazy] Leader mode -- autotarget on, assist cleared.')
 return
 end
+-- FOLLOWER
 if command == 'follower' then
-local name = args[2]
-if not name or name == '' then
-windower.add_to_chat(167, '[Lazy] Follower mode needs a name: //lazy follower <name>')
-return
+    local name = args[2]
+
+    -- No name supplied: find the current party leader.
+    if not name or name == '' then
+        local party = windower.ffxi.get_party()
+        local leader_id = party and party.party1_leader
+
+        if leader_id then
+            for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
+                local member = party[key]
+
+                if member
+                    and member.name
+                    and member.mob
+                    and member.mob.id == leader_id
+                then
+                    name = member.name
+                    break
+                end
+            end
+        end
+
+        if not name then
+            windower.add_to_chat(
+                167,
+                '[Lazy] Could not identify the party leader. Try //lazy follower <name>.'
+            )
+            return
+        end
+    end
+
+    settings.assist = name
+    settings.autotarget = false
+
+    windower.add_to_chat(
+        3,
+        '[Lazy] Follower mode -- assisting ' ..
+        name ..
+        ', autotarget off.'
+    )
+
+    windower.send_command(
+        'input /assist ' .. name
+    )
+
+    if active_profile
+        and active_profile.auto_engage == false
+    then
+        windower.send_command(
+            'wait 0.4; input /attack off'
+        )
+    end
+
+    return
 end
-settings.assist = name
-settings.autotarget = false
-windower.add_to_chat(3, '[Lazy] Follower mode -- assisting ' .. name .. ', autotarget off.')
-windower.send_command('input /assist ' .. name)
-if active_profile and active_profile.auto_engage == false then
-windower.send_command('wait 0.4; input /attack off')
-end
-return
-end
-if command == 'fight' then
 -- Grabs whatever mob is on <t> and locks Lazy onto that exact name,
 -- same as //lazy target but filled in from your current target.
+if command == 'fight' then
 local player = windower.ffxi.get_player()
 local current = windower.ffxi.get_mob_by_target('t')
 if not current or not current.valid_target or not current.hpp or current.hpp <= 0 then
@@ -587,19 +626,6 @@ end
 if command == 'freenuke' then
 Update_Job_Profile()
 Set_Nuke_Mode('free')
-return
-end
-if command == 'finisher' then
-local arg = args[2]
-if arg == 'on' then
-finisher_enabled = true
-elseif arg == 'off' then
-finisher_enabled = false
-elseif tonumber(arg) then
-finisher_hp = tonumber(arg)
-finisher_enabled = true
-end
-windower.add_to_chat(207, '[Lazy] Finisher: ' .. ((finisher_enabled ~= false) and 'ON' or 'OFF') .. ' at ' .. tostring(finisher_hp or 10) .. '% HP')
 return
 end
 if command == 'partychain' then
@@ -656,7 +682,7 @@ function SC_Monitor()
 while Start_Engine do
 local player = windower.ffxi.get_player()
 if player
-and not (current_job == 'RDM' and Debuff_Pending and Debuff_Pending())
+and not ((current_job == 'RDM' or current_job == 'GEO') and Debuff_Pending and Debuff_Pending())
 and player.status == 1
 and isBusy < 1
 and player.vitals.tp >= 1000
@@ -877,7 +903,7 @@ if player.vitals.mpp > ab.max_mp_percent then
 mp_ok = false
 end
 end
-if pet_ok and mp_ok and Can_Cast_Ability(ab.name) and Self_Ability_Gates_Ok(ab, player) then
+if pet_ok and mp_ok and Can_Cast_Ability(ab.name) then
 Cast_Ability(ab.name)
 self_ability_last_cast[ab.name] = now
 return
@@ -1146,14 +1172,9 @@ end
 end
 end
 end
-last_buff_tick_error = nil
 function Buff_Monitor()
 while Start_Engine do
-local ok, err = pcall(Buff_Tick)
-if not ok and tostring(err) ~= last_buff_tick_error then
-last_buff_tick_error = tostring(err)
-windower.add_to_chat(167, '[Lazy] Buff_Tick error: ' .. last_buff_tick_error)
-end
+pcall(Buff_Tick)
 coroutine.sleep(1)
 end
 end

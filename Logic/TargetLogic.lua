@@ -1412,13 +1412,9 @@ if magic_burst_ok then
 -- A valid magic burst gets first priority.
 if Try_Magic_Burst and Try_Magic_Burst() then return end
 end
--- RDM and GEO's required debuffs outrank ordinary free nukes and
--- everything below, whether or not magic-burst mode is currently eligible.
--- A valid magic burst above this check still gets first priority.
-if (current_job == 'RDM' or current_job == 'GEO')
-and Debuff_Pending
-and Debuff_Pending()
-then
+-- RDM's required debuffs outrank ordinary nukes and everything below,
+-- whether or not magic-burst mode is currently eligible.
+if (current_job == 'RDM' or current_job == 'GEO') and Debuff_Pending and Debuff_Pending() then
 return
 end
 -- Free nuking is independent of the magic-burst gate. In particular, GEO

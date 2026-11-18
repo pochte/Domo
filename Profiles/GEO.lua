@@ -1,11 +1,14 @@
-
 -- GEO JOB PROFILE
 JOB_PROFILES.GEO = {
     -- MELEE / ENGAGE SETTINGS
--- MELEE / ENGAGE SETTINGS
-auto_engage = false,
-use_weaponskills = false,
-engage_distance = 5,
+    auto_engage = false,
+    use_weaponskills = false,
+    engage_distance = 5,
+
+    -- GEO Luopan lifecycle management is handled by HealBuffLogic.lua.
+    -- Blaze-enhanced Luopans are preserved from Concentric Pulse,
+    -- Radial Arcana, and Mending Halation.
+    geo_luopan_management = true,
 
     -- SELF BUFFS & ABILITIES
     -- Indi-Fury is the normal self-centered GEO bubble.
@@ -14,14 +17,15 @@ engage_distance = 5,
     },
 
     -- FREE NUKE (//lazy freenuke).
-    -- Tier IV and lower are cast on the target
-    -- between bursts; V and VI are saved for magic burst.
+    -- Tier IV and lower are cast on the target between bursts;
+    -- V and VI are saved for magic burst.
     free_nuke = true,
     free_nuke_max_tier = 3,
     free_nuke_weather = true,
 
     self_abilities = {
-        -- Restores MP using Luopan when player MP drops below 50%
+        -- Restores MP using an unbuffed Luopan when player MP is low.
+        -- HealBuffLogic suppresses this on a Blaze-enhanced Luopan.
         {
             name = 'Radial Arcana',
             interval = 1,
@@ -30,7 +34,8 @@ engage_distance = 5,
             min_pet_hpp = 20
         },
 
-        -- Grants Luopan temporary invulnerability when HP drops below 30%
+        -- Grants Luopan temporary invulnerability when HP drops below 30%.
+        -- Allowed on both normal and Blaze-enhanced Luopans.
         {
             name = 'Dematerialize',
             interval = 1,
@@ -38,7 +43,8 @@ engage_distance = 5,
             max_pet_hpp = 30
         },
 
-        -- Restores Luopan HP when it drops below 40%
+        -- Restores Luopan HP when it drops below 40%.
+        -- Allowed on both normal and Blaze-enhanced Luopans.
         {
             name = 'Life Cycle',
             interval = 1,
@@ -48,8 +54,6 @@ engage_distance = 5,
     },
 
     -- ENTRUST BUFFS
-    -- Indi-Refresh on a mage player if one's in range;
-    -- otherwise Indi-Frailty on any player.
     entrust_buffs = {
         {
             ability = 'Entrust',
@@ -59,10 +63,7 @@ engage_distance = 5,
             },
             interval = 1,
         },
-
         {
-            -- The only other player, job unreadable, holds party leader:
-            -- assume a melee leader and give them Indi-Haste.
             ability = 'Entrust',
             spell = 'Indi-Haste',
             targets = {
@@ -70,25 +71,24 @@ engage_distance = 5,
             },
             interval = 1,
         },
-
         {
             ability = 'Entrust',
             spell = 'Indi-Frailty',
             targets = {
                 players_only = true
             },
-            fallback = true, -- only when no mage target exists
+            fallback = true,
             interval = 1,
         },
     },
 
     -- TARGET DEBUFFS
-    -- Geo-Frailty summons a Luopan on the battle target.
-    -- Blaze of Glory is used before summoning when available.
+    -- Blaze is optional; Geo-Frailty is still cast when Blaze is unavailable.
+    -- A successful Geo-Frailty cast is tracked separately for each enemy.
     debuffs = {
         {
             name = 'Geo-Frailty',
-            target = '<t>',
+            target = '<bt>',
             interval = 1,
             use_ability_before = 'Blaze of Glory',
             use_ability_after = 'Ecliptic Attrition',

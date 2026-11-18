@@ -101,12 +101,6 @@ end
 entrust_last_cast   = entrust_last_cast   or {}
 entrust_last_target = entrust_last_target or {}
 entrust_warn_last   = entrust_warn_last   or {}
--- Retry guards prevent repeated action commands if the client does not
--- immediately expose the Entrust buff or rejects an Indi spell command.
-entrust_ability_last_attempt = entrust_ability_last_attempt or {}
-entrust_spell_last_attempt   = entrust_spell_last_attempt   or {}
-ENTRUST_ABILITY_RETRY = 10 -- seconds between attempts to activate Entrust
-ENTRUST_SPELL_RETRY   = 3  -- seconds between attempts to issue the Indi spell
 ENTRUST_BUBBLE_DURATION = 300 -- seconds; a player holds ONE Indi, so don't overwrite another entrust spell's target within this window
 
 local function Member_Job(m)
@@ -201,9 +195,9 @@ function Find_Entrust_Target(eb, party, me_zone, now)
 end
 
 
--- Debug output is opt-in. Leaving this enabled by default makes Entrust
--- print recurring diagnostics forever when no suitable target is available.
-if ENTRUST_DEBUG == nil then ENTRUST_DEBUG = false end
+-- Set false once Entrust is working.
+ENTRUST_DEBUG = false
+--(ENTRUST_DEBUG == nil) and true or ENTRUST_DEBUG
 local entrust_dbg_last = {}
 function Entrust_Debug(key, msg)
     if not ENTRUST_DEBUG then return end
@@ -260,9 +254,122 @@ function Has_Buff_Named(name)
     end
     return false
 end
+-- GEO Luopan lifecycle helpers.
+-- Blaze state is tracked against the summoned pet ID. Unknown pets are treated
+-- as unbuffed until this addon has evidence that Blaze of Glory empowered them.
+geo_blaze_pet_id = geo_blaze_pet_id or nil
+geo_blaze_pending = geo_blaze_pending or false
+geo_blaze_pending_since = geo_blaze_pending_since or nil
+geo_summon_pending = geo_summon_pending or false
+geo_summon_blazed = geo_summon_blazed or false
+geo_unbuffed_pet_id = geo_unbuffed_pet_id or nil
+
+local GEO_LUOPAN_ENDING_ABILITIES = {
+    'Concentric Pulse',
+    'Radial Arcana',
+    'Mending Halation',
+}
+
+local function Geo_Bind_Pending_Blaze_Pet(pet)
+    if geo_blaze_pending and geo_blaze_pending_since
+        and os.clock() - geo_blaze_pending_since > 15
+        and not geo_summon_pending
+    then
+        geo_blaze_pending = false
+        geo_blaze_pending_since = nil
+    end
+    if geo_summon_pending and pet and pet.id then
+        if geo_summon_blazed then
+            geo_blaze_pet_id = pet.id
+            geo_unbuffed_pet_id = nil
+        else
+            geo_unbuffed_pet_id = pet.id
+            geo_blaze_pet_id = nil
+        end
+        geo_summon_pending = false
+        geo_summon_blazed = false
+        return true
+    end
+    return false
+end
+
+local function Geo_Pet_Is_Blaze(pet)
+    if not pet then return false end
+    Geo_Bind_Pending_Blaze_Pet(pet)
+    if geo_blaze_pet_id ~= nil and pet.id == geo_blaze_pet_id then
+        return true
+    end
+    -- A Luopan not summoned and classified by this running addon is unknown.
+    -- Treat it as protected rather than risk destroying a Blaze-enhanced pet.
+    return geo_unbuffed_pet_id == nil or pet.id ~= geo_unbuffed_pet_id
+end
+
+function Geo_Confirm_Luopan_Summon(was_blazed)
+    geo_summon_pending = true
+    geo_summon_blazed = was_blazed and true or false
+end
+
+local function Geo_Handle_Luopan_Before_Frailty(pet)
+    if current_job ~= 'GEO' or not pet then return false end
+
+    local pet_hpp = pet.hpp or 100
+    -- Recovery abilities are always permitted, including on a Blaze Luopan.
+    if pet_hpp <= 30 and Can_Cast_Ability('Dematerialize') then
+        Cast_Ability('Dematerialize')
+        self_ability_last_cast['Dematerialize'] = os.clock()
+        return true
+    end
+    if pet_hpp <= 40 and Can_Cast_Ability('Life Cycle') then
+        Cast_Ability('Life Cycle')
+        self_ability_last_cast['Life Cycle'] = os.clock()
+        return true
+    end
+
+    -- Never destroy a Luopan known to have been summoned with Blaze of Glory.
+    if Geo_Pet_Is_Blaze(pet) then
+        return false
+    end
+
+    -- An unbuffed Luopan may be ended to make room for Geo-Frailty on the
+    -- newly selected enemy. Only do this after the recovery options above
+    -- are not currently usable.
+    local recovery_available =
+        (pet_hpp <= 30 and Can_Cast_Ability('Dematerialize'))
+        or (pet_hpp <= 40 and Can_Cast_Ability('Life Cycle'))
+    if recovery_available then return false end
+
+    for _, ability_name in ipairs(GEO_LUOPAN_ENDING_ABILITIES) do
+        if Can_Cast_Ability(ability_name) then
+            Cast_Ability(ability_name)
+            self_ability_last_cast[ability_name] = os.clock()
+            -- The old pet is expected to disappear; clear any stale identity.
+            geo_blaze_pet_id = nil
+            return true
+        end
+    end
+    return false
+end
+
+-- Follow-up abilities (notably Ecliptic Attrition) wait for the newly created
+-- Luopan rather than firing before the geomancy spell has finished summoning it.
+function Schedule_Follow_Up(ability_name, wait_for_pet)
+    coroutine.schedule(function()
+        local deadline = os.clock() + 15
+        coroutine.sleep(2.5)
+        while os.clock() < deadline do
+            local pet_ok = not wait_for_pet
+                or windower.ffxi.get_mob_by_target('pet') ~= nil
+            if pet_ok and not isCasting and Can_Cast_Ability(ability_name) then
+                Cast_Ability(ability_name)
+                return
+            end
+            coroutine.sleep(0.5)
+        end
+    end, 0)
+end
+
 -- True while a debuff is due on the current target and can be cast now.
--- Combat yields to Buff_Tick for RDM and GEO so required debuffs are handled
--- before ordinary free nukes. require_no_pet keeps GEO from replacing a Luopan.
+-- Combat and the skillchain monitor yield to Buff_Tick so RDM applies debuffs first.
 function Debuff_Pending()
     if not settings.buffs_active or not active_profile or not active_profile.debuffs then
         return false
@@ -286,13 +393,7 @@ function Debuff_Pending()
     local pet = windower.ffxi.get_mob_by_target('pet')
     local recasts = windower.ffxi.get_spell_recasts()
     local known = windower.ffxi.get_spells()
-    -- debuff_hold_hpp (profile): above this mob HP% every debuff holds combat;
-    -- at or below it only the FIRST debuff in the list does (RDM: Dia).
-    local hold_hpp = active_profile.debuff_hold_hpp
-    for index, debuff in ipairs(active_profile.debuffs) do
-        if hold_hpp and index > 1 and target.hpp <= hold_hpp then
-            break
-        end
+    for _, debuff in ipairs(active_profile.debuffs) do
         local names, require_no_pet
         if type(debuff) == 'string' then
             names = {debuff}
@@ -306,6 +407,12 @@ function Debuff_Pending()
                 for _, name in ipairs(names) do
                     local spell = res.spells:with('name', name)
                     if spell then
+                        if current_job == 'GEO'
+                            and names[1] == 'Geo-Frailty'
+                            and known and known[spell.id]
+                        then
+                            return true
+                        end
                         if known and known[spell.id]
                             and recasts[spell.id] == 0
                             and player.vitals.mp >= spell.mp_cost
@@ -335,8 +442,6 @@ function Buff_Tick()
     if not player then return end
     local now = os.clock()
     Update_Job_Profile()
-    -- SMN: avatars, wards, rage, Favor, Siphon (Logic/smn_logic.lua)
-    if current_job == 'SMN' and SMN_Tick and SMN_Tick() then return end
     -- 1. DEBUFF LOGIC :Once per mob
     if active_profile.debuffs then
         Ensure_Debuff_Target()
@@ -370,13 +475,35 @@ function Buff_Tick()
                         .. ':' .. tostring(names[1])
                     local before_key = 'before:' .. spell_key
                     local pet_ok = not (require_no_pet and pet)
-                    if pet_ok and not debuff_last_cast[spell_key] then
-                        -- Run any setup ability once for this mob.
+                    if not debuff_last_cast[spell_key] then
+                        -- GEO needs a fresh Luopan for each new enemy. Preserve
+                        -- a Blaze-enhanced pet; only an unbuffed pet may be
+                        -- removed with Luopan-ending abilities.
+                        if current_job == 'GEO'
+                            and names[1] == 'Geo-Frailty'
+                            and pet
+                        then
+                            local acted = Geo_Handle_Luopan_Before_Frailty(pet)
+                            if acted then return end
+                            -- A remaining pet (especially a Blaze Luopan) blocks
+                            -- a new geomancy summon, but does not block other
+                            -- harmless buff/maintenance work below.
+                            pet_ok = false
+                        end
+                        if pet_ok then
+                        -- Run any setup ability once for this mob. Blaze is
+                        -- optional: if unavailable, Geo-Frailty still proceeds.
                         if use_ability_before
                             and not debuff_last_cast[before_key]
                             and Can_Cast_Ability(use_ability_before)
                         then
                             Cast_Ability(use_ability_before)
+                            if current_job == 'GEO'
+                                and use_ability_before == 'Blaze of Glory'
+                            then
+                                geo_blaze_pending = true
+                                geo_blaze_pending_since = os.clock()
+                            end
                             debuff_last_cast[before_key] = os.clock()
                             return
                         end
@@ -385,20 +512,26 @@ function Buff_Tick()
                             local spell = res.spells:with('name', name)
                             if spell and Cast_Spell_On(name, target_spec) then
                                 local cast_time = os.clock()
-                                -- Mark it as cast right away so the loop moves on to the
-                                -- next debuff; an interrupted cast clears this again
-                                -- (see the interrupt branch in Lazy.lua).
-                                debuff_last_cast[spell_key] = cast_time
+                                -- Cache this only after the incoming action confirms success.
                                 pending_cast = {
                                     store = debuff_last_cast,
                                     key = spell_key,
                                     spell_id = spell.id,
                                     sent_at = cast_time,
+                                    geo_summon = current_job == 'GEO'
+                                        and name == 'Geo-Frailty',
+                                    geo_blaze = current_job == 'GEO'
+                                        and name == 'Geo-Frailty'
+                                        and geo_blaze_pending,
                                 }
+                                if current_job == 'GEO' and name == 'Geo-Frailty' then
+                                    geo_blaze_pending = false
+                                    geo_blaze_pending_since = nil
+                                end
                                 if use_ability_after then
                                     Schedule_Follow_Up(
                                         use_ability_after,
-                                        require_no_pet
+                                        require_no_pet or current_job == 'GEO'
                                     )
                                 end
                                 fired = true
@@ -421,6 +554,7 @@ function Buff_Tick()
                             end
                         end
                         if fired then return end
+                        end -- pet_ok
                     end
                 end
             end
@@ -551,7 +685,17 @@ function Buff_Tick()
                     mp_ok = false
                 end
             end
-            if pet_ok and mp_ok and Can_Cast_Ability(ab.name) and Self_Ability_Gates_Ok(ab, player) then
+            local blaze_safe = true
+            if current_job == 'GEO'
+                and pet
+                and Geo_Pet_Is_Blaze(pet)
+                and (ab.name == 'Concentric Pulse'
+                    or ab.name == 'Radial Arcana'
+                    or ab.name == 'Mending Halation')
+            then
+                blaze_safe = false
+            end
+            if pet_ok and mp_ok and blaze_safe and Can_Cast_Ability(ab.name) then
                 Cast_Ability(ab.name)
                 self_ability_last_cast[ab.name] = now
                 return
@@ -579,41 +723,25 @@ function Buff_Tick()
             else
                 local armed = Has_Buff_Named(ent)
                 if not armed then
-                    local last_attempt = entrust_ability_last_attempt[eb.spell]
-                    if last_attempt and now - last_attempt < ENTRUST_ABILITY_RETRY then
-                        Entrust_Debug(eb.spell .. ':ja-wait', 'waiting for ' .. ent .. ' to become active')
-                    else
-                        local ok = Can_Cast_Ability(ent)
-                        Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok) .. (ok and '' or (' (' .. Ability_Block_Reason(ent) .. ')')))
-                        if ok then
-                            -- Record before issuing the command: Cast_Ability is asynchronous.
-                            entrust_ability_last_attempt[eb.spell] = now
-                            Cast_Ability(ent)
-                            return
-                        end
+                    local ok = Can_Cast_Ability(ent)
+                    Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok) .. (ok and '' or (' (' .. Ability_Block_Reason(ent) .. ')')))
+                    if ok then
+                        Cast_Ability(ent)
+                        return
                     end
                 else
-                    local spell_key = eb.spell .. ':' .. candidate
-                    local last_attempt = entrust_spell_last_attempt[spell_key]
-                    if last_attempt and now - last_attempt < ENTRUST_SPELL_RETRY then
-                        Entrust_Debug(eb.spell .. ':sp-wait', 'waiting before retrying ' .. eb.spell .. ' on ' .. candidate)
-                    else
-                        -- Record before issuing the command so a rejected command cannot
-                        -- be hammered again on every Buff_Tick.
-                        entrust_spell_last_attempt[spell_key] = now
-                        local spell = res.spells:with('name', eb.spell)
-                        local ok = spell and Cast_Spell_On(eb.spell, candidate)
-                        Entrust_Debug(eb.spell .. ':sp', ent .. ' active; Cast_Spell_On(' .. eb.spell .. ', ' .. candidate .. ')=' .. tostring(ok and true or false) .. (spell and '' or ' (spell not in res)'))
-                        if ok then
-                            entrust_last_target[eb.spell] = { name = candidate, at = now }
-                            pending_cast = {
-                                store = entrust_last_cast,
-                                key = eb.spell,
-                                spell_id = spell.id,
-                                sent_at = now,
-                            }
-                            return
-                        end
+                    local spell = res.spells:with('name', eb.spell)
+                    local ok = spell and Cast_Spell_On(eb.spell, candidate)
+                    Entrust_Debug(eb.spell .. ':sp', ent .. ' active; Cast_Spell_On(' .. eb.spell .. ', ' .. candidate .. ')=' .. tostring(ok and true or false) .. (spell and '' or ' (spell not in res)'))
+                    if ok then
+                        entrust_last_target[eb.spell] = { name = candidate, at = now }
+                        pending_cast = {
+                            store = entrust_last_cast,
+                            key = eb.spell,
+                            spell_id = spell.id,
+                            sent_at = now,
+                        }
+                        return
                     end
                 end
             end
