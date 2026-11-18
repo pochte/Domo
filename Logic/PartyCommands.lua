@@ -1444,18 +1444,24 @@ local function Fmt_Duration(sec)
         sec % 60)
 end
 
+-- Stats go to the Windower console AND the in-game chat log.
+local function Stats_Out(line)
+    print(line)
+    windower.add_to_chat(2, line)
+end
+
 function Party_Print_Stats()
     local s = party_stats
 
     if not s.start then
-        print('[Lazy] No session yet. //lazy start first.')
+        Stats_Out('[Lazy] No session yet. //lazy start first.')
         return
     end
 
     local elapsed = math.max(1, os.time() - s.start)
     local per_hr = 3600 / elapsed
 
-    print(string.format(
+    Stats_Out(string.format(
         '[Lazy] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s | exemplar points: %s',
         Fmt_Duration(elapsed),
         s.kills,
@@ -1476,7 +1482,7 @@ function Party_Print_Stats()
                 ' at this rate)'
         end
 
-        print(line)
+        Stats_Out(line)
     end
 end
 

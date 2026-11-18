@@ -79,6 +79,10 @@ tostring(origin_radius)
 return true
 end
 function Path_To_Origin()
+if party_follow_override then
+-- Regroup / rez walking owns movement; do not path home over it.
+return
+end
 if type(origin_x) ~= 'number'
 or type(origin_y) ~= 'number'
 then
@@ -943,7 +947,10 @@ return MELEE_ENGAGE_RANGE
 end
 function Follow_Monitor()
 while Start_Engine do
-if combat_locked_target_id then
+if party_follow_override then
+-- PartyCommands.lua (regroup / rez) owns movement right now. Do not
+-- stop or redirect its follow every tick.
+elseif combat_locked_target_id then
 -- Preserve the combat lock. Never switch targets here.
 local target = windower.ffxi.get_mob_by_id(combat_locked_target_id)
 if target and target.valid_target then
