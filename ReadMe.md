@@ -1,430 +1,132 @@
 # Lazy
 
-Helper for farming XP/CP/trash items while you're away from the keyboard.
+A Windower addon for automating FFXI farming while you're away from the keyboard.
 
-So far it:
+Lazy hunts mobs, fights, manages job abilities and spells, maintains buffs, heals the party, and handles Trust recovery. It can also coordinate multiple Lazy characters through party chat.
 
-- Hunts mobs around a starting spot, fights them, and always turns to face the target, even if a Trust tank pulls away from you
-- Keeps within range of the target, and weaponskills when TP is available, including ordered skillchains of up to 5 weaponskills
-- Can cast a spell whenever recast/MP allows
-- BLM and SCH magic burst, and can free nuke between bursts with the right element for the mob, plus a weather failsafe
-- Is main-job aware: each job has a profile (buffs, debuffs, party buffs, cures, magic bursts, abilities, food)
-- Cure bot, and resting for mage jobs
-- Tracks your Trusts and resummons any that die
-- Lets someone join a running party: they send a tell, Lazy pauses, invites them, level syncs and rebalances the Trusts
-- Takes party-chat commands (reset, go home, stop, start, hold, resume, regroup, rebuff, tnl) from everyone running Lazy, subject to each character's trusted-player settings
-- Raises dead party members (WHM first, then SCH, RDM, PLD and sub-job raisers), deals with Doom, and cleanses debuffs with WHM/SCH
+## Features
 
-### Installation
+- **Combat and targeting:** Hunts around a starting position, follows targets, faces enemies correctly, and supports leader and follower modes.
+- **Weaponskills:** Uses weaponskills when TP is available, with configurable skillchains of up to five steps and partychain support.
+- **Magic:** Spell casting, magic bursts, and BLM/SCH free nuking with elemental weaknesses and a weather failsafe.
+- **Job profiles:** Main-job-aware behavior for buffs, debuffs, cures, abilities, food, weaponskills, and magic.
+- **Healing:** Cure bot, emergency cures, mage resting, and party debuff cleansing.
+- **Trust management:** Tracks Trusts, resummons fallen Trusts, and can rebalance the party when players join.
+- **Party coordination:** Remote party commands, automatic raises, Doom handling, regrouping, and warping home.
+- **Session statistics:** Tracks kills, EXP, limit points, and EXP per hour.
 
-- Inside your Windower\Addons folder create a new folder called Lazy
-- Copy these files into the folder created above, keeping the folders as they are:
+---
+
+## Installation
+
+1. Open your Windower `Addons` folder.
+2. Create a folder named `Lazy`.
+3. Copy the addon files into it, preserving the folder structure.
 
 ```text
-Lazy.lua            the engine: commands, settings, combat loop, buffs, cures
-settings.lua        shared configuration (lists, party join, targeting rules)
-skills.lua          weaponskill / skillchain data
-profiles/           one profile per job (RDM.lua, WHM.lua, ...)
-Logic/
-  TargetLogic.lua   ALL targeting: choosing, combat lock, pathing, follow,
-                   damage tracking, aggro queue, Combat, TurnToTarget
-  TrustLogic.lua    trust tracking and resummon, party member jobs/levels,
-                   level sync
-  PartyCommands.lua party join ("chicken nuggets"), party-chat commands,
-                   rez, Doom and debuff cleansing, session stats, go home
-  JobLogic.lua      cast helpers, weaponskill getters and modes
-  HealBuffLogic.lua cure bot, buffs, debuffs, dispel (mage jobs only)
-  RestLogic.lua     resting (mage jobs only)
-  dnc_logic.lua     Dancer rotation (loaded on DNC)
-  rolls.lua         Corsair rolls (loaded on COR)
-  smn_logic.lua     Summoner avatars, wards, rage pacts, Favor, Siphon (loaded on SMN)
-  skillchain.lua    skillchain window and step tracking
-  magicburst.lua    magic bursts, BLM/SCH free nuke and weather failsafe
-debug/Debug.lua     debug logging and the /attack safety gate
-data/settings.xml   per-character settings, written by //lazy save
-                    (private: listed in .gitignore, keep it out of the repo)
+Lazy/
+├── Lazy.lua
+├── settings.lua
+├── skills.lua
+├── profiles/
+│   ├── RDM.lua
+│   ├── WHM.lua
+│   └── ...
+├── Logic/
+│   ├── TargetLogic.lua
+│   ├── TrustLogic.lua
+│   ├── PartyCommands.lua
+│   ├── JobLogic.lua
+│   ├── HealBuffLogic.lua
+│   ├── RestLogic.lua
+│   ├── dnc_logic.lua
+│   ├── rolls.lua
+│   ├── smn_logic.lua
+│   ├── skillchain.lua
+│   └── magicburst.lua
+├── debug/
+│   └── Debug.lua
+└── data/
+    ├── settings.xml
+    └── trusted_players.txt
 ```
 
-### Commands
+**Private data:** `data/settings.xml` and `data/trusted_players.txt` are character-specific files. Keep them out of the repository and add both to `.gitignore`.
 
-- //lazy start
-- //lazy stop
-- //lazy reload
-- //lazy save
-- //lazy show
-- //lazy debug on|off
-- //lazy leader
-- //lazy follower [name] -- name optional; defaults to party leader
-- //lazy autotarget on|off
-- //lazy target "Some Monster"
-- //lazy fight
-- //lazy range \<yalms\>
-- //lazy buffs on|off
-- //lazy cure on|off
-- //lazy rest on|off
-- //lazy burstmode
-- //lazy freenuke
-- //lazy nukeoff
-- //lazy chainmode
-- //lazy openmode
-- //lazy partychain
-- //lazy retrust
-- //lazy join \<name\>
-- //lazy join cancel
-- //lazy sync \<name\>
-- //lazy sync off
-- //lazy trust add|remove \<name\>
-- //lazy trust list|clear
-- //lazy tnl
-- //lazy party \<phrase\>
+---
 
-#### //lazy start
+## Commands
 
-Starts the helper. It records your current position as the origin (hunting stays within `//lazy range` yalms of it), detects your main job and loads its profile, snapshots your Trusts, and starts the monitors and combat engine.
+All commands use `//lazy`.
 
-It also clears any leftover target, combat, cast-tracking, and pathing state from an earlier run. If you haven't selected a mode (no follower target is set and autotarget is off), Lazy defaults to leader mode with autotarget enabled.
+| Command | Description |
+|---|---|
+| `start` / `stop` | Start or stop Lazy |
+| `reload` | Reload the addon and restart if it was running |
+| `save` | Save the current character's settings |
+| `show` | Display current settings and modes |
+| `debug on\|off` | Toggle debug logging |
+| `leader` | Enable leader mode and automatic targeting |
+| `follower [name]` | Assist a player, or the party leader if omitted |
+| `autotarget on\|off` | Toggle automatic hunting |
+| `target "Monster"` | Hunt a specific monster name |
+| `fight` | Set the current target as the hunting target |
+| `range <yalms>` | Set or display the hunting radius |
+| `buffs on\|off` | Toggle buff maintenance |
+| `cure on\|off` | Toggle the cure bot |
+| `rest on\|off` | Toggle mage resting |
+| `burstmode` | Magic bursts only |
+| `freenuke` | Enable BLM/SCH free nuking |
+| `nukeoff` | Disable automatic nuking |
+| `chainmode` | Use the configured full skillchain |
+| `openmode` | Use opener and closer weaponskills |
+| `partychain` | Continue party skillchains |
+| `retrust` | Refresh the Trust lineup snapshot |
+| `join <name>` | Invite a player using the party-join flow |
+| `join cancel` | Cancel a party join in progress |
+| `sync <name>` | Request level sync to a party member |
+| `sync off` | Turn level sync off |
+| `trust add <name>` | Add a trusted player |
+| `trust remove <name>` | Remove a trusted player |
+| `trust list` | Show trusted players |
+| `trust clear` | Clear the list (allow everyone again) |
+| `tnl` | Display session statistics |
+| `party <phrase>` | Run a party command on this character only |
 
-Running the command again while Lazy is already running does nothing. On startup, Lazy displays the active weaponskill and nuke modes where applicable, so you can see which settings are in use (see [Defaults](#defaults)).
+### Startup behavior
 
-Lazy refuses to start if your character is dead. If you die while it is running, Lazy reports the known source of the damage that killed you, if available, and requests a raise through party chat. If another party member is alive, Lazy waits for someone to raise you rather than stopping immediately. The dead character accepts the raise automatically, and the party waits for Weakness to wear off before resuming. If nobody raises you within `rez_timeout` seconds, Lazy stops on the dead character. See [Rez](#rez).
+`//lazy start` records your current position as the hunting origin, loads your main-job profile, snapshots your Trusts, and starts the combat and monitoring loops.
 
-#### //lazy stop
+If neither follower mode nor a custom targeting mode is selected, Lazy defaults to leader mode with autotarget enabled.
 
-Stops the helper. Your settings are kept.
+Lazy will not start while your character is dead. If you die while running, it can request a raise through party chat and accept the raise automatically. The party waits for Weakness to wear off before resuming.
 
-#### //lazy reload
+`//lazy reload` saves current settings, reloads the addon and its profiles, and restarts Lazy if it was running.
 
-Fully reloads the addon: every file, including profiles and `settings.lua`.
+---
 
-Your current settings are saved to `data/settings.xml` first. If Lazy was running, it restarts itself a few seconds after the reload; if it was stopped, it stays stopped.
+## Targeting and combat
 
-#### //lazy save
+Lazy can run in two main modes:
 
-Saves the current settings (the ones in [settings.xml](#datasettingsxml-per-character)) for the character you are logged in as.
+- **Leader:** Automatically finds eligible monsters around the starting position.
+- **Follower:** Assists a specified player or the party leader. Autotarget is disabled.
 
-#### //lazy show
+The hunting radius is controlled by `//lazy range` (default 10 yalms). Targeting rules, including eligible monsters and whether claimed or defeated mobs are ignored, are configured in `settings.lua`.
 
-Prints the current state: main job, autotarget, spell, weaponskill, the weaponskill mode (chain or open), the nuke mode on BLM/SCH, target, and whether buffs, the cure bot and resting are on.
+`//lazy fight` sets the currently selected monster as the hunting target. `//lazy target "Monster"` sets a specific monster name instead.
 
-#### //lazy debug on|off
+Job profiles control whether a character engages in melee, uses weaponskills, casts spells, or stays out of combat.
 
-Turns debug logging on or off; with no argument it says which it is. When on, Lazy prints target changes, `/attack` traces and party-permission packets (`0x077`, used by level sync) to chat and also writes them to `TargetLogic_Debug.txt` in the addon folder. The `/attack` safety gate (it blocks `/attack on` without a combat lock, on the wrong target, or while already engaged) is always active, debug on or off.
+## Weaponskills and skillchains
 
-Separately from debug, a few lines are always printed so problems are visible: `[Lazy] Buff_Tick error: ...` (once per distinct error; buff and ability code used to fail silently), `[Lazy] Haste Samba: waiting for TP (x/350)` / `sending (TP x)` while engaged on DNC or /DNC, and the party-join messages below.
+Lazy supports three weaponskill approaches:
 
-#### //lazy leader
+- **Chain mode:** Uses an ordered `ws_sc_chain` of up to five weaponskills.
+- **Open mode:** Uses `ws_sc_starter` to open and `ws_sc_closers` to continue a skillchain.
+- **Partychain:** Opens a chain, then chooses a weaponskill that continues the currently open chain, even if another player started it.
 
-Leader mode: autotarget on and assist cleared. Lazy picks the fights.
-
-#### //lazy follower [name]
-
-Enables follower mode: Lazy assists the specified player and turns autotarget off, so it fights the targets they engage.
-
-If the active profile has `auto_engage = false` (such as mage profiles), Lazy stays disengaged rather than automatically attacking.
-
-If no name is supplied, Lazy attempts to identify and assist the current party leader. If it cannot identify the leader, it displays an error and asks you to provide a name.
-
-#### //lazy autotarget on|off
-
-Turns automatic hunting on or off. While on, Lazy fights the nearest mob that is on your `targeting.monsters` list (in `settings.lua`), alive, unclaimed, and within `//lazy range` of the origin (the `targeting` rules there can relax those). If there is none and you are not soloing, it joins a mob a party member has claimed. With nothing to fight it walks back to the origin. An assist target (below) wins over autotarget while one is set.
-
-#### //lazy target "Some Monster"
-
-Hunts only mobs with that name instead of the `targeting.monsters` list. Single mob name only for now. `//lazy target` with no name clears it.
-
-#### //lazy fight
-
-Target the mob you want, then run this: it fills in `//lazy target` with that mob's name for you. It refuses if you have no target, you are the target, or the target is a party member or Trust.
-
-#### //lazy range \<yalms\>
-
-Sets how far from the origin Lazy will hunt (default 10). With no number it prints the current radius.
-
-#### //lazy buffs on|off
-
-Turns buff maintenance on or off (default: on). What gets kept up depends on the job profile: `self_buffs`, `needed_buffs`, `party_buffs`, `debuffs`, `self_abilities`, `entrust_buffs` and so on (see [Job profiles](#job-profiles)).
-
-We track our own last-cast time per buff against its real duration (recasting a little early so it never actually drops) rather than reading buff icons. Icon names don't reliably match spell names (enspell tiers, "Refresh III" vs the "Refresh" icon, etc.), which was causing recasts every fight even while a buff was still up. This applies to self buffs and to party buffs alike.
-
-#### //lazy cure on|off
-
-Turns the cure bot on or off (default: on). It watches the party's HP every half-second and heals whoever is lowest once they are under 75%, picking a cure tier from their missing HP (not %) using the profile's `cure_tiers`. Each tier tries its spells in order and stops if none are up, rather than getting stuck retrying one spell that's on cooldown. Who cures is up to the profile:
-
-- WHM: always (`cure_bot_active`)
-- SCH: only when there is no WHM in the party (`cure_bot_if_no_whm`)
-- RDM and anything with `emergency_cure`: only as a failsafe, when someone drops below `emergency_cure_threshold` (default 25%)
-
-#### //lazy rest on|off
-
-Turns resting on or off (default: on). Mage jobs (WHM, RDM, BLM, GEO, SCH, SMN; an RDM with NIN sub does not rest) use `/heal` when idle and MP is below 500, and stand up when anything needs them: you are being hit, a party member within 30 yalms is under 60%, or a magic burst window is open. If something attacks you while you are idle, Lazy engages it.
-
-SMN decides its own resting (`RestLogic.lua` defers to `smn_logic.lua`): it sits only when no avatar is out and nothing is due, until MP is full, and stands up when a ward or Elemental Siphon is due, you take damage, or a party member is under 60%. See [SMN](#smn).
-
-**#### //lazy burstmode**
-
-Jobs with Elemental Magic: automatically nuke only during magic bursts, when a skillchain window is open. This is the default mode. See [Free nuke](#free-nuke-blm-and-sch).
-
-**#### //lazy freenuke**
-
-Jobs with Elemental Magic: automatically nuke between bursts using tier IV and lower spells in the element the target is weak to, while reserving tier V and VI spells for magic bursts. Jobs without applicable Elemental Magic nuking support will receive a message and remain unchanged. This mode lasts for the session. See [Free nuke](#free-nuke-blm-and-sch).
-
-**#### //lazy nukeoff**
-
-Disables automatic Elemental Magic nuking, including free nukes and magic bursts. Use `//lazy burstmode` or `//lazy freenuke` to re-enable automatic nuking. This mode lasts for the session.
-
-#### //lazy chainmode
-
-Switches weaponskills to the full ordered skillchain, `ws_sc_chain` (up to 5 steps, see [Skillchains](#skillchains)). If the current profile has no `ws_sc_chain` it says so and stays in open mode.
-
-#### //lazy openmode
-
-Switches weaponskills back to opener + closers only: `ws_sc_starter` opens, and a closer from `ws_sc_closers` fires when one continues the open skillchain. A profile that only defines a chain (no starter/closers of its own) uses the chain's first two entries as the opener and closer.
-
-The mode lasts for the session and starts in chain mode, so a profile with a `ws_sc_chain` uses it until you run `//lazy openmode`.
-
-#### //lazy partychain
-
-Weaponskill mode for chaining with a party. Lazy opens with the profile's `ws_sc_starter`, then continues whatever skillchain is open, whoever started it, with the best weaponskill it can use right now (see [Skillchains](#skillchains)). When nothing continues it, Lazy does nothing and the burst takes the end of the chain.
-
-#### //lazy retrust
-
-Lazy snapshots which party slots are Trusts when you `//lazy start`, and resummons any of them that die for the rest of the session (player characters are never touched, only Trusts). If you deliberately swap or release a trust mid-session, run `//lazy retrust` to re-snapshot the current lineup so Lazy stops trying to bring back one you let go and picks up whatever you swapped in instead.
-
-#### //lazy join \<name\>
-
-Runs the party-join flow for that player, exactly as if they had sent the tell phrase (see [Party join](#party-join)). Lazy must be started.
-
-#### //lazy join cancel
-
-Cancels a party join in progress and resumes normal botting.
-
-#### //lazy sync \<name\>
-
-Level syncs the party to that party member. Only the party leader's request is accepted by the game, so this only works while you are leader. Useful for testing the packet on its own. Level sync strips buffs and dismisses trusts, same as doing it from the party menu.
-
-#### //lazy sync off
-
-Turns level sync off (the cap lifts after about 30 seconds).
-
-#### //lazy trust add|remove \<name\>, //lazy trust list|clear
-
-Manages who may use the [party commands](#party-commands). With an empty list (the default) everyone in the party can. Once there is a name on it, only listed players can. The list is saved straight away to the `<trusted_players>` entry of your character in `data/settings.xml`. `list` shows it, `clear` empties it (everyone allowed again). The "chicken nuggets" tell has its own `allowed_senders` list in `settings.lua`.
-
-#### //lazy tnl
-
-Prints this session's stats to the console: how long Lazy has run, kills, EXP and EXP per hour, limit points, and EXP to the next level with a rough time to get there. Counting starts at `//lazy start`. A kill is counted when you get EXP or limit points for it, so mobs that give nothing aren't counted. The same thing is printed after `go home`.
-
-#### //lazy party \<phrase\>
-
-Runs a [party command](#party-commands) on this character only, as if a trusted player had said it: `//lazy party reset`, `//lazy party go home`, and so on. Handy for testing.
-
-### Defaults
-
-Nothing needs setting before `//lazy start`; these are what you get:
-
-- **Targeting:** leader mode (autotarget on) when no assist is set.
-- **Weaponskills:** chain mode. A profile with a `ws_sc_chain` fires it; a profile without one uses normal weaponskills (its `ws_sc_starter` and `ws_sc_closers`). `//lazy openmode` forces the normal ones.
-- **Nuking (BLM and SCH):** burst only. Free nuke stays off until you run `//lazy freenuke`.
-- **Magic burst:** only at the end of a chain, see [Magic burst timing](#magic-burst-timing).
-
-Lazy prints the weaponskill and nuke modes when it starts.
-
-### Party join
-
-For when a bot disconnects, or a player wants to join later: the person logs in, sends the bot a tell containing the phrase (default `chicken nuggets`), and Lazy brings them into the party. The phrase only has to appear as whole words: case, punctuation and extra words don't matter (`Chicken nuggets pls!` works). Lazy must be started (`//lazy start`) for the tell to do anything; if it isn't, or a join is already running, or the sender isn't in `allowed_senders`, Lazy prints a `[Lazy]` line saying so instead of ignoring the tell silently. (Party-chat commands are different: those need the phrase as the whole line.)
-
-1. New pulls pause. A fight already in progress is allowed to finish (up to `fight_timeout` seconds). Lazy only waits while you are fighting a live monster: if you are engaged on nothing it disengages and carries on, and it prints a line every 20 seconds while it is really waiting.
-2. If the party is full and Trusts are in it, Lazy dismisses them first (`/retr all`) and waits for the slots to free up, because a full party can't accept the invite. Then it invites them (`/pcmd add`) and waits up to `invite_timeout` seconds for them to accept, re-sending the invite once halfway. If they never accept, Lazy tells them so and goes back to botting.
-3. Once they're in, Lazy reads their job and master level and level syncs the party to the lowest master level. **Only characters with master level 1 or higher count**: a non-master is ignored, because syncing to one would make everyone too weak to fight. No sync is sent if everyone counted is the same master level, if a sync is already active, or if Lazy doesn't know a master level yet. Trusts that are still out are dismissed before the sync is requested. If the sync doesn't take within a few seconds, Lazy says so and waits up to 45 seconds for you to do it from the party menu.
-4. The party has six slots and the new player took one, so Lazy works out how many trusts to leave out. A trust whose job matches the new player's goes first (a RDM joins: Koru-Moru stays out; a WHM joins: Yoran-Oran stays out). If none match, trusts are dropped in `trust_sacrifice_order`. The rest are resummoned.
-5. The new player is told they're in, and normal botting resumes.
-
-Settings (all in `settings.lua`):
-
-```lua
-party_join = {
-    enabled = true,
-    phrase = 'chicken nuggets',
-    allowed_senders = {},      -- {} = anyone who knows the phrase; or { 'Name1', 'Name2' }
-    invite_timeout = 60,       -- seconds to wait for them to accept
-    fight_timeout = 120,       -- seconds to let a fight in progress finish first
-    level_sync = true,
-}
-trust_jobs = { ['Ulmia'] = 'BRD', ['Koru-Moru'] = 'RDM', ... }   -- trusts by party name
-trust_sacrifice_order = { { 'Ulmia', 'Joachim' }, { 'Qultada' } }
-```
-
-By default anyone who knows the phrase can use it, so put names in `allowed_senders` if you don't want that. Trust names are the ones shown in the party list (`Yoran-Oran`, not `Yoran-Oran (UC)`); the game has no job data for trusts, so `trust_jobs` is hardcoded.
-
-### Party commands
-
-Every running Lazy instance listens to party chat. Each character independently checks whether the sender is allowed to issue commands. By default, everyone in the party is allowed. Once a character has a trusted-player list, only the names on that character's list are allowed.
-
-Say one of these as the **whole line** (case doesn't matter) and every character running Lazy that accepts the sender reacts for itself. Rename any of them under `party_commands.phrases` in `settings.lua`. Lazy has to be started on a character for it to react (except `start`).
-
-| Say | What happens |
-| --- | --- |
-| `reset` | Everyone re-anchors the origin where they stand and forgets which mobs it had given up on. For when someone got stuck behind a rock |
-| `go home` | Everyone warps out, then Lazy stops and prints the session stats (see below) |
-| `stop` / `start` | Stops or starts Lazy on everyone |
-| `hold` | No new pulls, fights in progress finish |
-| `resume` | Carries on after `hold` or `regroup`, with a new origin where each character is standing (the "camp here" command) |
-| `regroup` | Everyone runs to the party leader and holds. Say `resume` to carry on |
-| `rebuff` | Forgets every buff timer so all buffs are recast |
-| `tnl` | Each character prints its own session stats to its console (same as `//lazy tnl`) |
-
-#### How to use them in game
-
-1. Start Lazy on every character that should react (`//lazy start`). A character that isn't running Lazy ignores all of this. `start` is the one exception: it can start a stopped Lazy.
-2. Type the phrase in **party chat**, as the whole line and nothing else:
-
-   ```text
-   /p reset
-   /p go home
-   /p hold
-   ```
-
-   (`/p` and `/party` both work.) Every character in the party that is running Lazy and accepts the sender reacts, including the one you typed it on. Each one prints a `[Lazy] ...` line in chat so you can see it heard you.
-3. Typical flow after a mess: `/p hold` (stop pulling), `/p regroup` (everyone runs to the leader), then `/p resume` (everyone carries on from where they stand, new origin).
-4. To try a command on just one character, run `//lazy party <phrase>` in that character's console, for example `//lazy party reset` or `//lazy party go home`. It behaves as if a trusted player said it.
-
-Only **party chat** counts. Tells, say, shout and linkshell chat are ignored, and so is a line with anything extra in it (`/p please reset` does nothing). `rez`, Doom and debuff cleansing need no typing: they happen by themselves while Lazy is running (cleansing also needs `//lazy cure` on).
-
-If nothing happens:
-
-- Lazy isn't started on that character (`//lazy start`).
-- The sender isn't on your trusted list. You'll see `Ignored "..." from <name> (not on the trusted list)`. Check `//lazy trust list`, or `//lazy trust clear` to allow everyone.
-- It wasn't party chat, or the line had extra words in it.
-- You renamed the phrase in `settings.lua`; use the new one.
-
-**Who can use them.** By default everyone in the party. Add names with `//lazy trust add <name>` and only those players are listened to; anyone else gets one line in chat saying they were ignored. The list lives in `data/settings.xml` (`<trusted_players>`, comma separated), which is private to you: it is listed in `.gitignore` so character names stay out of the repo. If it was already committed once, run `git rm --cached data/settings.xml`.
-
-**go home.** Each character tries these in order, using the first it has: Warp Ring, Treat Staff, Warp Cudgel, Instant Warp. An item in a satchel, sack or case is moved to the inventory first; rings and staves are equipped (ring2 / main) and Lazy waits out the equip delay before using them. If nothing works it prints `go home command executed, no way home. Character has been logged out.` to the console and logs out. When the zone changes Lazy stops itself and prints the stats. A dead character skips it. The list of items is `party_commands.go_home_items`.
-
-### Rez
-
-A character at 0 HP says `rez` in party chat and waits (the party pauses its pulls). Someone else raises them, in this order: WHM, SCH, RDM, PLD, then any other job whose sub job can raise (a GEO /WHM, for example). Each waits its turn (`rez_step` seconds apart, longer for the sub-job raisers) so only one casts, and says `rezzing` so the rest stand down. It casts the best raise it can at the level it has (Arise, Raise III, Raise II, Raise), walking into range first. The raised character accepts the raise prompt by itself, then the whole party waits until Weakness has worn off before botting again (`wait_for_weakness`, never longer than `rez_pause_max`). Trusts that died with the leader are resummoned by the normal Trust recovery. If nobody raises within `rez_timeout` seconds, Lazy stops on the dead character as it used to. GEO can't raise from its main job, which is why it comes last.
-
-### Doom
-
-A doomed character says so in party chat **once**, uses Holy Water (if it has some in the inventory) every few seconds, and anyone who can cast Cursna (WHM or SCH, main or sub) casts it on them until the Doom is gone. If they die anyway, the rez above takes over.
-
-### Debuff cleansing
-
-Characters that can cast the right spell (WHM and SCH, main or sub job) clear debuffs on party members within 20 yalms with no chat involved: Poisona, Paralyna, Blindna, Silena, Stona, Viruna (disease and plague), Cursna (curse and Doom) and Erase for Slow, Weight, Bind, Addle and the stat-down effects.
-
-Everyone waits a short turn first so two healers don't both cast. Add names to `party_commands.cleanse_ignore` to leave a debuff alone; **Evasion Down is ignored by default** because it is applied constantly. Needs `//lazy cure` on.
-
-Settings (all optional, in `settings.lua`):
-
-```lua
-party_commands = {
-    -- phrases = { go_home = 'go home' },   -- rename any phrase
-    rez_enabled = true,
-    rez_timeout = 180,         -- dead this long with no raise: Lazy stops
-    rez_step = 4,              -- seconds between each raiser's turn
-    rez_last_ditch_wait = 10,  -- extra wait for sub-job-only raisers
-    rez_give_up = 90,          -- stop working on one corpse after this long
-    rez_pause_max = 900,       -- never keep the party paused longer than this
-    wait_for_weakness = true,
-    raise_accept_param = 0,    -- try 1 if the dead character declines the raise
-    doom_holy_water = true,
-    holy_water_tries = 8,
-    cleanse_step = 2,
-    cleanse_ignore = { 'Evasion Down' },
-    regroup_timeout = 45,
-    go_home_items = {
-        { name = 'Warp Ring',   slot = 'ring2' },
-        { name = 'Treat Staff', slot = 'main' },
-        { name = 'Warp Cudgel', slot = 'main' },
-        { name = 'Instant Warp' },
-    },
-}
-```
-
-New party-chat phrases and `//lazy` commands live in `Logic/PartyCommands.lua` (`PHRASE_HANDLERS` and `Party_Command`).
-
-### Magic burst timing
-
-Every job with magic burst (BLM, SCH, GEO, RDM, WHM, and NIN when its profile has `magic_burst`) bursts at the **end of a chain**, not in the middle of one. A burst cast mid-chain eats the window the next weaponskill needs and gives up the bigger bonus a longer chain earns.
-
-- **Closed chain** (level 4, Radiance or Umbra, or past the last step): nobody can continue it, so it is burst right away.
-- **Open chain** (Light, Darkness, Fusion, anything that can still be continued): burst once nobody has continued it for `burst_quiet` seconds (default 2). If someone does continue it in that time, Lazy waits for the next window.
-- A job's own chain keeps the window while it still has something to fire: an ordered chain with an affordable next step, or partychain with a weaponskill that continues the skillchain.
-- `burst_when = 'any'` bursts any open window as soon as it opens.
-
-**Which element.** Lazy follows bg-wiki's Elemental Alignments. For a given skillchain it tries, in order: the mob's weakness (from `nuke_weakness`) if that element can burst this skillchain, then the default order.
-
-| Skillchain | Elements that burst it (default order) |
-| --- | --- |
-| Light, Radiance | Wind, Lightning, Fire, Light |
-| Darkness, Umbra | Dark, Ice, Water, Earth |
-| Fusion | Fire, Light |
-| Fragmentation | Wind, Lightning |
-| Gravitation | Earth, Dark |
-| Distortion | Ice, Water |
-| Transfixion / Compression / Liquefaction / Scission / Reverberation / Detonation / Induration / Impaction | Light / Dark / Fire / Earth / Water / Wind / Ice / Lightning |
-
-Dark is Comet on BLM and Impact on RDM, SCH and GEO; Light is Holy II then Holy on WHM; all set by each profile's `burst_spells`. Change the order for a skillchain with `burst_elements` in `settings.lua`.
-
-**Burst as often as the window allows.** While a window is open Lazy checks four times a second and casts again as soon as the last cast has finished (`burst_gap`, 0.7 seconds apart), so fast cast can burst two or three times in one window. It won't start a cast with less than `burst_min_left` seconds of window left.
-
-In `settings.lua`:
-
-```lua
-burst_when = 'final'   -- default: the end of a chain; 'any' = any open window
-burst_quiet = 2        -- seconds an open chain must sit untouched to have ended
-burst_min_left = 0.8
-burst_gap = 0.7
--- burst_elements = { Light = { 'Wind', 'Fire' } }
-```
-
-Things to know:
-
-- A job only bursts an element it has spells for: the stock BLM, SCH, GEO, RDM and WHM profiles cover everything above except that WHM only has Light.
-- A melee job that bursts (NIN) does not open a new chain on top of a window it is about to burst.
-- Casting is not blocked by action delay while a window is open, but a cast never overlaps another.
-
-### Free nuke (BLM and SCH)
-
-BLM and SCH have two nuke modes, switched with `//lazy burstmode` and `//lazy freenuke`:
-
-- **Burst mode** (default): nuke only when a window can be burst (the end of a chain, see [Magic burst timing](#magic-burst-timing)), using the profile's `burst_spells`, highest tier first.
-- **Free nuke**: bursts work the same, and in between Lazy nukes the target with tier IV and lower (`free_nuke_max_tier`, default 4), trying IV, then III, II and I as recasts allow. Tier V and VI are never used for free nukes.
-
-GEO and RDM are too busy (curing, meleeing) and NIN has its own spells, so this is only on for profiles with `free_nuke = true` (BLM and SCH).
-
-**Which element.** Most mobs have an elemental weakness, so the spell depends on the mob. `nuke_weakness` in `settings.lua` is an ordered list; the mob's name is matched as whole words, case-insensitive, first match wins:
-
-```lua
-nuke_weakness = {
-    { 'Worm',   'Fire' },
-    { 'Bat',    'Aero' },
-    { 'Beetle', 'Blizzard' },
-    { 'Eft',    'Blizzard' },
-    { 'Crab',   'Blizzard' },
-}
--- nuke_default = 'Thunder'   -- element for mobs that match nothing
-```
-
-The element is the spell family: Fire, Blizzard, Aero, Stone, Thunder or Water. A mob that matches nothing is not free nuked (Lazy prints a note once per mob name) unless `nuke_default` is set. A profile can set its own `nuke_weakness`.
-
-**Weather failsafe.** Before a free nuke, if neither the weather nor a storm of yours matches the nuke's element, Lazy casts the matching Storm on you (Storm II if you can, otherwise Storm I). This is only a backup for when GearSwap hasn't already done it. Only SCH can cast storms: SCH main, or SCH sub at a high enough level (Storm I needs sub level 41 to 48 depending on the storm; Storm II is level 100). It is skipped silently when it can't be cast, and turned off with `free_nuke_weather = false` in the profile. It only runs before free nukes, never before a burst, since a burst can't wait for a cast.
-
-Other rules:
-
-- A free nuke is held back while a skillchain window is open, so the window is left for the burst.
-- It keeps enough MP back to still cast the family's top burst spell.
-- The target must be a live monster within 19 yalms that is unclaimed or claimed by you or your party, not on `spell_blacklist`, and Lazy won't start a new pull while a Trust recovery or party join is pausing pulls.
-- Nothing is cast while you are moving or casting.
-
-Magic burst itself had a gap that is now fixed: skillchain elements are named Ice, Wind, Earth and Lightning, but the profiles' burst lists are keyed by spell family, so those four skillchains never got a burst before. They now map to Blizzard, Aero, Stone and Thunder.
-
-### Skillchains
-
-Two ways to define what Lazy fires, switched with `//lazy chainmode` and `//lazy openmode`.
-
-**Chain** (`ws_sc_chain`): up to 5 weaponskills fired in exactly this order. Entry 1 opens the chain; after each step lands, the next entry fires, and after the last entry Lazy waits for the window to end before opening again. An entry is a name, or `{ name, min_tp }` (default 1000):
+A weaponskill entry can be a name or a name with a minimum TP requirement:
 
 ```lua
 ws_sc_chain = {
@@ -436,117 +138,224 @@ ws_sc_chain = {
 }
 ```
 
-For just a short chain, list fewer entries. Steps are counted per target no matter who landed them, so a step a party member adds moves the chain along. While a chain window is open, Lazy does not fire the opener on top of it.
+These settings can be defined in a job profile or in `settings.lua`. Profile values take priority.
 
-**Open** (`ws_sc_starter` / `ws_sc_closers`): the original opener + closers. The closer is whichever one in `ws_sc_closers` continues the skillchain that is currently open.
+## Magic and nuking
 
-Both can live in a job profile (`profiles/<JOB>.lua`) or as defaults in `settings.lua`. A profile's own values win, and a profile can define a chain and starter/closers together so both modes do something different.
+Magic bursts happen at the end of a skillchain rather than immediately when a window opens. Lazy waits for the chain to close or remain untouched for the configured quiet period.
 
-**Partychain** (`//lazy partychain`): the opener is the profile's `ws_sc_starter` (or the first entry of its chain). After that, whenever a skillchain is open, Lazy looks at the weaponskills the character can use right now, works out which skillchain each one would make from the open chain's properties, and fires the one that makes the **highest level**. Ties go to the order of `partychain_prefer` (a list of weaponskill names, in a profile or `settings.lua`), then alphabetically. It looks one step ahead only: it does not plan a route to Radiance, and it does not know what other players will use next. If nothing continues the chain it does nothing, and the burst takes the end. Steps count whoever landed them, and it needs 1000 TP like any other step.
+Supported bursting jobs include BLM, SCH, GEO, RDM, WHM, and profiles with appropriate magic-burst support.
 
-### Job profiles
+BLM and SCH also support free nuking:
 
-Lazy is main-job aware: it detects your current main job and switches behavior profiles (`//lazy show` prints which one is active). Each profile is its own file, `profiles/<JOB>.lua`, which fills in `JOB_PROFILES.<JOB>`. Unlisted jobs fall back to `DEFAULT`, which does nothing (no melee, no weaponskills).
+- **Burst mode:** Nukes only during magic-burst windows.
+- **Free nuke:** Uses tier IV and lower spells between bursts, based on the target's elemental weakness. Higher-tier spells are reserved for bursts.
 
-Profiles are loaded from the list near the top of `Lazy.lua` (`profile_list`: RDM, GEO, BLM, SCH, DNC, NIN, WHM, WAR, THF, COR, BRD, SMN, DEFAULT). To add a job, create `profiles/<JOB>.lua` and add the job to that list.
+The free-nuke system can use a configured default element and has a SCH weather failsafe that casts the matching Storm when needed.
 
-Currently defined:
+Relevant settings include `burst_when`, `burst_quiet`, `burst_elements`, `nuke_weakness`, and `nuke_default`.
 
-| Job | What its profile does |
-| --- | --- |
-| RDM | Melee. Self buffs (Haste II, Temper II, Gain-STR, Enfire II), debuffs (engage first, then debuffs, then everything else, and it holds a skillchain until they are cast), party Haste II and Refresh III, Composure/Saboteur, Dispel, magic burst, emergency cures |
-| WHM | Cure bot, Protectra/Shellra/Auspice and other self buffs, bursts Light with Holy II and Holy. No melee |
-| BLM | Magic burst (Tier VI cap) and free nuke (`//lazy freenuke`, tier IV and lower). No melee |
-| SCH | Magic burst and free nuke (`//lazy freenuke`), plus the cure bot when there is no WHM in the party |
-| GEO | Indi-Fury, Geo-Frailty opening debuff, Luopan maintenance and recovery, Blaze of Glory, Ecliptic Attrition, Entrust buffs, magic bursts |
-| BRD | Party songs (Honor March, Knight's Minne V). No melee |
-| COR | Rolls (`rolls.lua`), Wildfire opener |
-| DNC | Dancer rotation (`dnc_logic.lua`), Rudra's Storm |
-| NIN | Kakka: Ichi, magic burst with Raiton/Hyoton. Weaponskills: open mode is Blade: Ten opener and closer, chain mode (`//lazy chainmode`) is Blade: Shun > Blade: Kamu > Blade: Shun, repeating |
-| THF | Conspirator, Sneak Attack, Trick Attack, Box Step (every 40s), Reverse Flourish (at 3+ finishing moves), Rudra's Storm. With /DNC, Haste Samba every 90s |
-| WAR | Upheaval opener, Ukko's Fury closer, Hasso/Berserk/Blood Rage/Aggressor, re-provoke if stuck |
-| SMN | Wards (Hastega II, Crystal Blessing, Crimson Howl) and Ifrit's Favor, rage pacts, Elemental Siphon under 70% MP, rests between ward cycles, emergency cures. No melee |
+---
 
-Mage jobs (WHM, RDM, BLM, GEO, SCH, SMN) load `HealBuffLogic.lua` and `RestLogic.lua`, which replace the simpler buff/cure code in `Lazy.lua`; other jobs use the simpler code. DNC and COR load `dnc_logic.lua` and `rolls.lua`; SMN loads `smn_logic.lua`.
+## Party join: "chicken nuggets"
 
-#### SMN
+A player can join a running Lazy party by sending a tell containing the configured phrase. The default phrase is:
 
-All SMN behavior lives in `Logic/smn_logic.lua`, called once per buff tick; gear is GearSwap's job. In priority order:
-
-1. **Elemental Siphon** when MP is under 70% and the ability is ready. It only works on an elemental spirit, so Lazy summons the spirit for the day, siphons, then releases it. Gives up after 30s and retries a minute later.
-2. **Wards**, on timers rather than buff icons: Hastega II (Garuda, every 165s), Crystal Blessing (Shiva, 165s) and Crimson Howl (Ifrit, 50s). It only swaps avatars for a ward whose shared recast is nearly ready.
-3. **Ifrit's Favor** (Avatar's Favor) is recast whenever the buff is missing.
-4. **Combat**: Assault, then the highest-level rage pact the current avatar knows and can afford (per-avatar lists in `smn_logic.lua`).
-5. **Idle**: with no avatar out and nothing due it does not resummon; it rests until a ward or Siphon is due.
-
-Emergency cure works like RDM (`emergency_cure` in the profile) and needs a sub job that can cast Cure. Ward timings and the rage lists are at the top of `smn_logic.lua`.
-
-#### Haste Samba (DNC and /DNC)
-
-On DNC main or DNC sub, Lazy uses Haste Samba every 90 seconds while engaged. If there isn't 350 TP, or the cast doesn't land within 5 seconds, it keeps trying. It goes up before a chain is opened or the DNC rotation runs, and never inside an open skillchain window. This replaces the old per-profile Haste Samba entries (`self_abilities` / `subjob_abilities`), which are ignored.
-
-Other players' jobs come from the game's party packets, which are sent when someone joins, zones or changes job, so a member who was already in the party when Lazy loaded can show as `job?` until then.
-
-Entrust debug logging is available in `HealBuffLogic.lua` through `ENTRUST_DEBUG`. It is disabled by default. When enabled, it prints the party slots, the jobs Lazy sees, who the leader is, and why Entrust cannot be used yet (for example `on recast, 312s left`).
-
-Keys a profile can set (anything else in a profile is ignored):
-
-| Key | Meaning |
-| --- | --- |
-| `auto_engage` | `false` = never attack (mages); stay out of melee |
-| `use_weaponskills` | weaponskill when TP allows |
-| `engage_distance`, `ranged_pull` | how close to get; ranged pull settings (`range`, `engage_distance`) |
-| `ws_sc_starter`, `ws_sc_closers`, `ws_sc_chain` | weaponskills, see [Skillchains](#skillchains) |
-| `needed_buffs`, `food` | buffs/abilities kept up by name, and food to eat. Each is tried at most once per 15s so one that is rejected can't block weaponskills |
-| `needed_buff_rules` | per-ability overrides for `needed_buffs`: `['Box Step'] = { interval = 40 }` (seconds between tries), `['Reverse Flourish'] = { min_finishing_moves = 3 }` |
-| `self_buffs` | spells kept up on yourself: `{ name, interval (minutes), fallback }` |
-| `self_abilities` | job abilities with conditions (`require_pet`, `max_mp_percent`, `min_pet_hpp`, `max_pet_hpp`) |
-| `party_buffs` | `{ spell, targets ('ALL_PLAYERS' or { jobs = {...} }), interval, range, self }` |
-| `entrust_buffs` | Entrust + Indi spell on a chosen party member (GEO). `targets` is `{ jobs = {...} }`, `{ players_only = true }`, or `{ lone_leader_unknown_job = true }` (the only other player, job unreadable, holding party leader). Set `fallback = true` to use an entry only when no earlier entry has a target |
-| `debuffs`, `dispel` | debuffs on the target, and Dispel (only on `dispel_whitelist` mobs) |
-| `debuffs_engaged_only` | `true` = cast the debuffs only once engaged, not while the pull is still pending (RDM) |
-| `debuff_hold_hpp` | RDM: while a debuff is due and castable, weaponskills and nukes wait for it (at most 8 seconds). Above this mob HP% every debuff holds them; at or below it only the first one in the list does (default 50) |
-| `haste_active`, `haste_samba_active`, `haste_targets` | haste handling (Haste Samba itself is the 90s timer above) |
-| `magic_burst`, `burst_spells`, `magic_burst_requires_buff` | burst during skillchain windows: spell family (Fire, Blizzard, Aero, Stone, Thunder, Water, Darkness, Light) mapped to spells, best first |
-| `free_nuke`, `free_nuke_max_tier`, `free_nuke_weather` | BLM/SCH free nuke: on/off, highest tier cast outside bursts (default 4), storm failsafe (default on) |
-| `nuke_weakness`, `nuke_default` | mob name to element for free nukes, see [Free nuke](#free-nuke-blm-and-sch) |
-| `cure_bot_active`, `cure_bot_if_no_whm`, `cure_bot_requires_buff` | when the cure bot runs |
-| `cure_tiers` | `{ max_missing, spells }` list picked by the target's missing HP |
-| `emergency_cure`, `emergency_cure_threshold` | failsafe curing for non-healers |
-| `provoke_if_stuck`, `stuck_threshold` | provoke and re-face if engaged without landing hits |
-| `dnc_rotation`, `job_abilities` | job-specific hooks |
-
-Anything a profile leaves out falls back to the plain values in `settings.lua`, so a job without a profile just keeps using what is there.
-
-### Settings
-
-#### settings.lua
-
-Shared configuration, edited by hand and reloaded with `//lazy reload`: weaponskill fallbacks (`ws_sc_starter`, `ws_sc_closers`, optional `ws_sc_chain`), `spell_blacklist` (mobs never to cast the configured spell on), `dispel_whitelist` (mobs Lazy may Dispel/Finale), `haste_blacklist` (players who never get Haste II), `burst_when`, `burst_quiet`, `burst_min_left`, `burst_gap`, `burst_elements` (magic burst), `partychain_prefer` (partychain tie-breaks), `nuke_weakness` / `nuke_default` (free nuke), `party_join`, `trust_jobs` and `trust_sacrifice_order` (see [Party join](#party-join)), `party_commands` (see [Party commands](#party-commands)), `targeting` (`monsters` list, `only_unclaimed`, `only_alive`, `within_origin`), `needed_buffs`, `food`, and `subjob_abilities`.
-
-#### data/settings.xml (per character)
-
-Written by `//lazy save`, read when the addon loads. Keys under `<global>` apply to every character, and a section named for a character overrides them for that character.
-
-```xml
-<spell></spell>
-<spell_active></spell_active>
-<weaponskill></weaponskill>
-<weaponskill_active></weaponskill_active>
-<autotarget>false</autotarget>
-<target>Monster Name</target>
-<assist></assist>
-<buffs_active>true</buffs_active>
-<cure_active>true</cure_active>
-<rest_active>true</rest_active>
-<trusted_players></trusted_players>
+```text
+chicken nuggets
 ```
 
-- spell - Spell to cast, will cast whenever MP and recast time allows
-- spell_active - true/false enables/disables casting of the spell
-- weaponskill, weaponskill_active - legacy; weaponskills now come from the job profile / `settings.lua`, and these are only shown by `//lazy show`
-- autotarget - true/false enables/disables automatic hunting of mobs in range
-- target - name of monster to hunt
-- assist - player to assist, empty for none
-- buffs_active, cure_active, rest_active - what `//lazy buffs`, `//lazy cure` and `//lazy rest` toggle
-- trusted_players - comma separated names allowed to use the party-chat commands, empty = everyone. Managed with `//lazy trust`
+The phrase can appear alongside other words, and capitalization or punctuation does not matter.
+
+Lazy must be running to respond. The join process:
+
+1. Pauses new pulls and lets an active fight finish.
+2. Makes room by dismissing Trusts if necessary.
+3. Invites the player and waits for them to accept.
+4. Reads their job and master level, then requests level sync when appropriate.
+5. Rebalances the Trust lineup to fit the new party member.
+6. Resumes normal operation.
+
+Trusts matching the new player's job are prioritized for removal; otherwise, Lazy uses `trust_sacrifice_order`.
+
+Only players with master level 1 or higher are considered for automatic level-sync selection.
+
+You can also initiate the same process manually:
+
+```text
+//lazy join PlayerName
+//lazy join cancel
+```
+
+### Trusted players
+
+Party-chat commands and party-join requests use the same trusted-player list, stored in:
+
+```text
+data/trusted_players.txt
+```
+
+The list is private to your installation and persists between sessions.
+
+- An empty list allows everyone.
+- Once the list contains names, only those players can issue party commands or request a join.
+- Real players are automatically added when they join your party.
+- Previously trusted players remain trusted after leaving.
+- A player already in your party can use the join phrase to be added to the trusted list.
+
+Manage the list in game:
+
+```text
+//lazy trust add PlayerName
+//lazy trust remove PlayerName
+//lazy trust list
+//lazy trust clear
+```
+
+If an older trusted-player setting exists, Lazy imports it when the trusted-player file is first created.
+
+---
+
+## Party commands
+
+Every running Lazy character listens for configured phrases in party chat. Each character checks the sender against its own trusted-player list.
+
+Say the phrase as the **entire party-chat line**. For example:
+
+```text
+/p reset
+/p hold
+/p regroup
+/p resume
+/p go home
+```
+
+| Phrase | Action |
+|---|---|
+| `reset` | Re-anchor the hunting origin and clear abandoned-target tracking |
+| `go home` | Warp out, stop Lazy, and print session statistics |
+| `stop` / `start` | Stop or start Lazy |
+| `hold` | Stop new pulls and allow current fights to finish |
+| `resume` | Resume operation with a new origin |
+| `regroup` | Move everyone to the party leader and hold |
+| `rebuff` | Reset buff timers so buffs are recast |
+| `tnl` | Print session statistics |
+
+Phrases can be renamed in `settings.lua` under `party_commands.phrases`.
+
+`//lazy party <phrase>` runs a party command on the current character only.
+
+### Raises, Doom and debuff cleansing
+
+These systems work automatically while Lazy is running:
+
+- **Raises:** Party members coordinate raises, prioritizing WHM, SCH, RDM, PLD, then jobs with a raising subjob. The raised character accepts the raise and the party waits for Weakness to wear off.
+- **Doom:** A doomed character uses Holy Water when available and requests Cursna from party members who can cast it.
+- **Debuff cleansing:** WHM and SCH (main or sub) remove supported status effects from nearby party members. `cleanse_ignore` can exclude specific effects; Evasion Down is ignored by default.
+
+Cleansing requires the cure system to be enabled.
+
+### Go home
+
+`go home` attempts to use a warp item in this order:
+
+1. Warp Ring
+2. Treat Staff
+3. Warp Cudgel
+4. Instant Warp
+
+The item list can be changed with `party_commands.go_home_items`. If no warp method is available, Lazy logs out.
+
+---
+
+## Job profiles
+
+Lazy detects the main job and loads the corresponding file from `profiles/`. Profiles define combat behavior, buffs, debuffs, weaponskills, cures, magic bursts, abilities, and food.
+
+Current profiles:
+
+| Job | Main behavior |
+|---|---|
+| RDM | Melee, buffs, debuffs, Dispel, magic bursts and emergency cures |
+| WHM | Healing, party buffs and Light magic bursts; no melee |
+| BLM | Magic bursts and optional free nuking; no melee |
+| SCH | Magic bursts, free nuking and conditional healing |
+| GEO | Indi/Geo buffs, Frailty, Luopan maintenance, Entrust and magic bursts |
+| BRD | Party songs |
+| COR | Rolls and Wildfire opener |
+| DNC | Dancer rotation and Haste Samba |
+| NIN | Buffs and magic bursts with configured weaponskills |
+| THF | Sneak Attack, Trick Attack, Box Step and weaponskills |
+| WAR | Buffs, provoke and weaponskills |
+| SMN | Avatar wards, rage pacts, Favor, Elemental Siphon and emergency cures |
+
+Jobs without a profile use `DEFAULT`, which does not engage or use weaponskills.
+
+To add a job, create `profiles/<JOB>.lua` and add it to the profile list in `Lazy.lua`.
+
+Job-specific logic is loaded from `Logic/` when required. For example, DNC uses `dnc_logic.lua`, COR uses `rolls.lua`, and SMN uses `smn_logic.lua`.
+
+---
+
+## Configuration and data
+
+### `settings.lua`
+
+Shared configuration edited by hand. It contains defaults and rules used across characters, including:
+
+- Targeting and hunting rules
+- Weaponskill and skillchain defaults
+- Buffs, food and abilities
+- Magic-burst and free-nuke settings
+- Party join and Trust configuration
+- Party commands, raise behavior and cleansing rules
+
+Reload changes with `//lazy reload`.
+
+### `data/settings.xml`
+
+Per-character settings saved by `//lazy save` and loaded when the addon starts.
+
+Settings can have a `<global>` section and character-specific sections. Character settings override global values.
+
+This file stores individual character preferences such as the current target, assist target, spell settings, and whether buffs, curing and resting are enabled.
+
+### `data/trusted_players.txt`
+
+Private persistent list of players allowed to use party commands and request party joins. Managed in game with `//lazy trust`.
+
+Both data files should be excluded from version control.
+
+---
+
+## Session statistics
+
+`//lazy tnl` displays:
+
+- Session duration
+- Kills
+- EXP and EXP per hour
+- Limit points
+- EXP remaining to the next level
+- Estimated time to level
+
+Statistics begin when `//lazy start` runs. A kill is counted when it awards EXP or limit points.
+
+The same statistics are printed when using `go home`.
+
+---
+
+## Debugging
+
+Use:
+
+```text
+//lazy debug on
+//lazy debug off
+```
+
+Debug output includes target changes, `/attack` safety-gate traces, and relevant party permission packets. Additional logs are written to `TargetLogic_Debug.txt`.
+
+The `/attack` safety gate is always active, even when debug logging is disabled.
+
+For issues, include the relevant `[Lazy]` chat output and debug log when reporting a problem.
