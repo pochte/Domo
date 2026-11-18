@@ -282,26 +282,43 @@ end)
 -- last_damage_kind) and the aggro queue are OWNED by TargetLogic.lua.
 -- They are globals; Death_Monitor only reads them to report a cause.
 local death_reported = false
+local death_since = nil
 function Death_Monitor()
 while Start_Engine do
 local player = windower.ffxi.get_player()
 if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
 if not death_reported then
 death_reported = true
+death_since = os.clock()
 local cause = last_damage_source or 'unknown causes'
 if last_damage_kind then
 cause = cause .. ' (' .. last_damage_kind .. ')'
 elseif last_damage_source then
 cause = cause .. ' (melee)'
 end
+-- PartyCommands.lua: if anyone else is alive, ask for a rez and keep
+-- running (waiting up to Party_Rez_Timeout()). Otherwise stop as before.
+if Party_Death_Begin and Party_Death_Begin() then
+windower.add_to_chat(
+167,
+'[Lazy] You died -- killed by ' .. cause .. '. Asking the party for a rez.'
+)
+else
 windower.add_to_chat(
 167,
 '[Lazy] You died -- killed by ' .. cause .. '. Stopping Lazy.'
 )
 Start_Engine = false
 end
+elseif Party_Rez_Timeout and death_since
+and os.clock() - death_since > Party_Rez_Timeout()
+then
+windower.add_to_chat(167, '[Lazy] No raise arrived in time. Stopping Lazy.')
+Start_Engine = false
+end
 else
 death_reported = false
+death_since = nil
 end
 coroutine.sleep(0.5)
 end

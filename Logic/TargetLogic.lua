@@ -21,7 +21,9 @@
 -- acquisition, new engagements and approaching; never touches an
 -- established combat lock.
 function Targeting_Paused()
-return (trust_recovery_paused or party_join_active) and true or false
+-- Party_Paused() (PartyCommands.lua) covers hold, regroup, go home and rez waits.
+local party_paused = Party_Paused and Party_Paused()
+return (trust_recovery_paused or party_join_active or party_paused) and true or false
 end
 -- ORIGIN / PATHING
 function Origin_Distance(x, y, z)
