@@ -532,11 +532,17 @@ windower.add_to_chat(3, '[Lazy] Leader mode -- autotarget on, assist cleared.')
 return
 end
 -- FOLLOWER
+-- FOLLOWER
 if command == 'follower' then
-    local name = args[2]
+    -- Preserve the actual player-name capitalization.
+    local name = raw_args[2] and tostring(raw_args[2]) or nil
+
+    if name == '' then
+        name = nil
+    end
 
     -- No name supplied: find the current party leader.
-    if not name or name == '' then
+    if not name then
         local party = windower.ffxi.get_party()
         local leader_id = party and party.party1_leader
 
@@ -567,6 +573,22 @@ if command == 'follower' then
     settings.assist = name
     settings.autotarget = false
 
+    -- Clear stale leader-mode targeting, but never disturb
+    -- an established fight.
+    local player = windower.ffxi.get_player()
+
+    if not combat_locked_target_id
+        and (not player or player.status ~= 1)
+    then
+        managed_target_id = nil
+        support_return_target_id = nil
+        pending_target_id = nil
+        pending_target_time = 0
+        engage_sent_target_id = nil
+        combat_lock_time = nil
+        combat_started = false
+    end
+
     windower.add_to_chat(
         3,
         '[Lazy] Follower mode -- assisting ' ..
@@ -574,9 +596,7 @@ if command == 'follower' then
         ', autotarget off.'
     )
 
-    windower.send_command(
-        'input /assist ' .. name
-    )
+    windower.send_command('input /assist ' .. name)
 
     if active_profile
         and active_profile.auto_engage == false

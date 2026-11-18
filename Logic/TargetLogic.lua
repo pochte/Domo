@@ -128,7 +128,7 @@ path_tick = 0
 return
 end
 origin_unreachable_since = nil
-windower.ffxi.follow(0)
+windower.ffxi.follow()
 if distance > 3 then
 local now = os.clock()
 if not path_last_distance
@@ -1701,7 +1701,9 @@ pending_target_time = 0
 -- Support spells temporarily select a party member. Do not fight that
 -- temporary target while a cast/action is underway; restore our managed
 -- enemy as soon as the action has actually finished.
-elseif support_return_target_id or managed_target_id then
+elseif settings.assist == ''
+    and (support_return_target_id or managed_target_id)
+then
 if not isCasting and (isBusy or 0) <= 0 and not pending_cast then
 local wanted_id = support_return_target_id or managed_target_id
 if not target or target.id ~= wanted_id then
@@ -1776,6 +1778,42 @@ pending_target_id = nil
 pending_target_time = 0
 windower.ffxi.follow(0)
 -- WAITING FOR TARGET SELECTION
+-- ASSIST MODE
+-- Follower mode always gets priority over stale managed targets
+-- and pending leader-mode selections.
+elseif settings.assist ~= '' then
+    windower.send_command('input /assist ' .. settings.assist)
+
+    local target = windower.ffxi.get_mob_by_target('t')
+    Debug.Target('ASSIST TARGET', target)
+
+    if target
+        and not Is_Player_Pet(target)
+        and not Is_Party_Member(target.id)
+        and target.id ~= (windower.ffxi.get_player() or {}).id
+        and target.valid_target
+        and type(target.hpp) == 'number'
+        and target.hpp > 0
+    then
+        managed_target_id = target.id
+        engage_sent_target_id = nil
+
+        if type(target.distance) == 'number'
+            and math.sqrt(target.distance) <= Stop_Range(target)
+        then
+            Engage_Target(target)
+        else
+            windower.ffxi.follow(target.index)
+        end
+    end
+
+    if not lockon_done
+        and active_profile
+        and active_profile.auto_engage ~= false
+    then
+        windower.send_command('input /lockon')
+        lockon_done = true
+    end
 elseif pending_target_id then
 local expected_id = pending_target_id
 local confirmed = Confirm_Target({ id = expected_id })
