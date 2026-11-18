@@ -309,6 +309,41 @@ function Geo_Confirm_Luopan_Summon(was_blazed)
     geo_summon_blazed = was_blazed and true or false
 end
 
+-- Geo-Frailty is cached once per mob in debuff_last_cast, and the cached record
+-- skips the whole GEO block. When the Luopan dies the record has to go, or the
+-- same mob never gets Frailty again. This keeps its own watch table instead of
+-- leaning on geo_summon_pending, which only clears when something happens to
+-- call Geo_Pet_Is_Blaze with a live pet and can otherwise stay true forever.
+geo_frailty_watch = geo_frailty_watch or {}  -- [spell_key] = { since, pet_seen }
+local GEO_LUOPAN_SPAWN_GRACE = 15            -- seconds to wait for a fresh Luopan to appear
+
+local function Geo_Refresh_Frailty_Record(target, pet)
+    if current_job ~= 'GEO' or not target or not target.id then return end
+    local spell_key = tostring(target.id) .. ':Geo-Frailty'
+    if not debuff_last_cast[spell_key] then
+        geo_frailty_watch[spell_key] = nil
+        return
+    end
+    local now = os.clock()
+    local w = geo_frailty_watch[spell_key]
+    if not w then
+        w = { since = now, pet_seen = false }
+        geo_frailty_watch[spell_key] = w
+    end
+    if pet then
+        w.pet_seen = true
+        return
+    end
+    -- No Luopan right now.
+    if pending_cast and pending_cast.geo_summon then return end
+    -- Just cast: give the new Luopan time to spawn before calling it dead.
+    -- If one never shows up, fall through and recast anyway.
+    if not w.pet_seen and now - w.since < GEO_LUOPAN_SPAWN_GRACE then return end
+    debuff_last_cast[spell_key] = nil
+    debuff_last_cast['before:' .. spell_key] = nil
+    geo_frailty_watch[spell_key] = nil
+end
+
 local function Geo_Handle_Luopan_Before_Frailty(pet)
     if current_job ~= 'GEO' or not pet then return false end
 
@@ -391,6 +426,7 @@ function Debuff_Pending()
         return false
     end
     local pet = windower.ffxi.get_mob_by_target('pet')
+    Geo_Refresh_Frailty_Record(target, pet)
     local recasts = windower.ffxi.get_spell_recasts()
     local known = windower.ffxi.get_spells()
     for _, debuff in ipairs(active_profile.debuffs) do
@@ -401,7 +437,12 @@ function Debuff_Pending()
             names = type(debuff.name) == 'table' and debuff.name or {debuff.name}
             require_no_pet = debuff.require_no_pet
         end
-        if names and names[1] and not (require_no_pet and pet) then
+        -- A Blaze Luopan blocks a new Geo-Frailty in Buff_Tick, so don't report
+        -- it as pending or combat/nuking yields to a cast that can't happen.
+        local geo_blocked = current_job == 'GEO'
+            and names and names[1] == 'Geo-Frailty'
+            and pet and Geo_Pet_Is_Blaze(pet)
+        if names and names[1] and not (require_no_pet and pet) and not geo_blocked then
             local key = tostring(target.id) .. ':' .. tostring(names[1])
             if not debuff_last_cast[key] then
                 for _, name in ipairs(names) do
@@ -447,6 +488,7 @@ function Buff_Tick()
         Ensure_Debuff_Target()
         local target = windower.ffxi.get_mob_by_target('t')
         local pet = windower.ffxi.get_mob_by_target('pet')
+        Geo_Refresh_Frailty_Record(target, pet)
         if target
             and target.hpp
             and target.hpp > 0
