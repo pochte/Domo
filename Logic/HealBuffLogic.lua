@@ -261,7 +261,8 @@ function Has_Buff_Named(name)
     return false
 end
 -- True while a debuff is due on the current target and can be cast now.
--- Combat and the skillchain monitor yield to Buff_Tick so RDM applies debuffs first.
+-- Combat yields to Buff_Tick for RDM and GEO so required debuffs are handled
+-- before ordinary free nukes. require_no_pet keeps GEO from replacing a Luopan.
 function Debuff_Pending()
     if not settings.buffs_active or not active_profile or not active_profile.debuffs then
         return false
