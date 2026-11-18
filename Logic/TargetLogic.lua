@@ -1779,6 +1779,7 @@ pending_target_time = 0
 windower.ffxi.follow(0)
 -- WAITING FOR TARGET SELECTION
 -- ASSIST MODE
+
 -- Follower mode always gets priority over stale managed targets
 -- and pending leader-mode selections.
 elseif settings.assist ~= '' then
@@ -1794,7 +1795,9 @@ elseif settings.assist ~= '' then
         and target.valid_target
         and type(target.hpp) == 'number'
         and target.hpp > 0
+        and target.hpp <= 99
     then
+        -- The mob has actually been pulled and damaged.
         managed_target_id = target.id
         engage_sent_target_id = nil
 
@@ -1805,6 +1808,9 @@ elseif settings.assist ~= '' then
         else
             windower.ffxi.follow(target.index)
         end
+    else
+        -- Wait for the party to damage the mob before joining.
+        windower.ffxi.follow(0)
     end
 
     if not lockon_done
@@ -1814,36 +1820,43 @@ elseif settings.assist ~= '' then
         windower.send_command('input /lockon')
         lockon_done = true
     end
+
 elseif pending_target_id then
-local expected_id = pending_target_id
-local confirmed = Confirm_Target({ id = expected_id })
-if confirmed then
-local mob = windower.ffxi.get_mob_by_id(expected_id)
-if not mob
-or not mob.valid_target
-or type(mob.hpp) ~= 'number'
-or mob.hpp <= 0
-or Is_Player_Pet(mob)
-then
-Debug.State('CONFIRMED TARGET NO LONGER VALID')
-pending_target_id = nil
-pending_target_time = 0
-else
-local distance = type(mob.distance) == 'number'
-and math.sqrt(mob.distance)
-or nil
-local stop_range = Stop_Range(mob)
-Debug.Target('CONFIRMED TARGET WAITING FOR RANGE', mob)
-if distance and distance > stop_range then
-Debug.Target('CONFIRMED TARGET OUT OF RANGE - FOLLOWING', mob)
-windower.ffxi.follow(mob.index)
-else
-windower.ffxi.follow(0)
-Debug.Target('CONFIRMED TARGET READY TO ENGAGE', mob)
-Engage_Target(mob)
-end
-end
-end
+    local expected_id = pending_target_id
+    local confirmed = Confirm_Target({ id = expected_id })
+
+    if confirmed then
+        local mob = windower.ffxi.get_mob_by_id(expected_id)
+
+        if not mob
+            or not mob.valid_target
+            or type(mob.hpp) ~= 'number'
+            or mob.hpp <= 0
+            or Is_Player_Pet(mob)
+        then
+            Debug.State('CONFIRMED TARGET NO LONGER VALID')
+            pending_target_id = nil
+            pending_target_time = 0
+        else
+            local distance = type(mob.distance) == 'number'
+                and math.sqrt(mob.distance)
+                or nil
+
+            local stop_range = Stop_Range(mob)
+
+            Debug.Target('CONFIRMED TARGET WAITING FOR RANGE', mob)
+
+            if distance and distance > stop_range then
+                Debug.Target('CONFIRMED TARGET OUT OF RANGE - FOLLOWING', mob)
+                windower.ffxi.follow(mob.index)
+            else
+                windower.ffxi.follow(0)
+                Debug.Target('CONFIRMED TARGET READY TO ENGAGE', mob)
+                Engage_Target(mob)
+            end
+        end
+    end
+
 -- EXISTING MANAGED TARGET
 elseif managed_target_id then
 local target = windower.ffxi.get_mob_by_target('t')
