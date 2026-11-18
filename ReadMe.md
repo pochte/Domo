@@ -45,6 +45,7 @@ Logic/
   RestLogic.lua     resting (mage jobs only)
   dnc_logic.lua     Dancer rotation (loaded on DNC)
   rolls.lua         Corsair rolls (loaded on COR)
+  smn_logic.lua     Summoner avatars, wards, rage pacts, Favor, Siphon (loaded on SMN)
   skillchain.lua    skillchain window and step tracking
   magicburst.lua    magic bursts, BLM/SCH free nuke and weather failsafe
 debug/Debug.lua     debug logging and the /attack safety gate
@@ -125,6 +126,12 @@ Lazy prints target changes, `/attack` traces and party-permission packets
 blocks `/attack on` without a combat lock, on the wrong target, or while
 already engaged) is always active, debug on or off.
 
+Separately from debug, a few lines are always printed so problems are visible:
+`[Lazy] Buff_Tick error: ...` (once per distinct error; buff and ability code
+used to fail silently), `[Lazy] Haste Samba: waiting for TP (x/350)` /
+`sending (TP x)` while engaged on DNC or /DNC, and the party-join messages
+below.
+
 #### //lazy leader
 Leader mode: autotarget on and assist cleared. Lazy picks the fights.
 
@@ -187,6 +194,11 @@ SMN; an RDM with NIN sub does not rest) use `/heal` when idle and MP is below 50
 when anything needs them: you are being hit, a party member within 30 yalms
 is under 60%, or a magic burst window is open. If something attacks you
 while you are idle, Lazy engages it.
+
+SMN decides its own resting (`RestLogic.lua` defers to `smn_logic.lua`): it
+sits only when no avatar is out and nothing is due, until MP is full, and
+stands up when a ward or Elemental Siphon is due, you take damage, or a party
+member is under 60%. See [SMN](#smn).
 
 **#### //lazy burstmode**  
 Jobs with Elemental Magic: automatically nuke only during magic bursts, when a skillchain window is open. This is the default mode. See [Free nuke](#free-nuke-blm-and-sch).
@@ -278,9 +290,14 @@ Lazy prints the weaponskill and nuke modes when it starts.
 
 ### Party join
 For when a bot disconnects, or a player wants to join later: the person logs
-in, sends the bot a tell containing the phrase (default `chicken nuggets`,
-not case sensitive), and Lazy brings them into the party. Lazy must be
-started (`//lazy start`) for the tell to do anything.
+in, sends the bot a tell containing the phrase (default `chicken nuggets`),
+and Lazy brings them into the party. The phrase only has to appear as whole
+words: case, punctuation and extra words don't matter (`Chicken nuggets pls!`
+works). Lazy must be started (`//lazy start`) for the tell to do anything; if
+it isn't, or a join is already running, or the sender isn't in
+`allowed_senders`, Lazy prints a `[Lazy]` line saying so instead of ignoring
+the tell silently. (Party-chat commands are different: those need the phrase
+as the whole line.)
 
 1. New pulls pause. A fight already in progress is allowed to finish (up to
    `fight_timeout` seconds). Lazy only waits while you are fighting a live
@@ -611,7 +628,7 @@ weaponskills).
 
 Profiles are loaded from the list near the top of `Lazy.lua`
 (`profile_list`: RDM, GEO, BLM, SCH, DNC, NIN, WHM, WAR, THF, COR, BRD,
-DEFAULT). To add a job, create `profiles/<JOB>.lua` and add the job to that
+SMN, DEFAULT). To add a job, create `profiles/<JOB>.lua` and add the job to that
 list.
 
 Currently defined:
@@ -627,14 +644,41 @@ Currently defined:
 | COR | Rolls (`rolls.lua`), Wildfire opener |
 | DNC | Dancer rotation (`dnc_logic.lua`), Rudra's Storm |
 | NIN | Kakka: Ichi, magic burst with Raiton/Hyoton. Weaponskills: open mode is Blade: Ten opener and closer, chain mode (`//lazy chainmode`) is Blade: Shun > Blade: Kamu > Blade: Shun, repeating |
-| THF | Conspirator, Sneak Attack, Trick Attack, Rudra's Storm |
+| THF | Conspirator, Sneak Attack, Trick Attack, Box Step (every 40s), Reverse Flourish (at 3+ finishing moves), Rudra's Storm. With /DNC, Haste Samba every 90s |
 | WAR | Upheaval opener, Ukko's Fury closer, Hasso/Berserk/Blood Rage/Aggressor, re-provoke if stuck |
-| SMN | Wards (Hastega II, Crystal Blessing, Crimson Howl) and Ifrit’s Favor, rage pacts, Elemental Siphon under 70% MP, rests between ward cycles, emergency cures. No melee |
+| SMN | Wards (Hastega II, Crystal Blessing, Crimson Howl) and Ifrit's Favor, rage pacts, Elemental Siphon under 70% MP, rests between ward cycles, emergency cures. No melee |
 
 Mage jobs (WHM, RDM, BLM, GEO, SCH, SMN) load `HealBuffLogic.lua` and
 `RestLogic.lua`, which replace the simpler buff/cure code in `Lazy.lua`;
 other jobs use the simpler code. DNC and COR load `dnc_logic.lua` and
-`rolls.lua`.
+`rolls.lua`; SMN loads `smn_logic.lua`.
+
+#### SMN
+All SMN behavior lives in `Logic/smn_logic.lua`, called once per buff tick;
+gear is GearSwap's job. In priority order:
+
+1. **Elemental Siphon** when MP is under 70% and the ability is ready. It only
+   works on an elemental spirit, so Lazy summons the spirit for the day,
+   siphons, then releases it. Gives up after 30s and retries a minute later.
+2. **Wards**, on timers rather than buff icons: Hastega II (Garuda, every
+   165s), Crystal Blessing (Shiva, 165s) and Crimson Howl (Ifrit, 50s). It
+   only swaps avatars for a ward whose shared recast is nearly ready.
+3. **Ifrit's Favor** (Avatar's Favor) is recast whenever the buff is missing.
+4. **Combat**: Assault, then the highest-level rage pact the current avatar
+   knows and can afford (per-avatar lists in `smn_logic.lua`).
+5. **Idle**: with no avatar out and nothing due it does not resummon; it
+   rests until a ward or Siphon is due.
+
+Emergency cure works like RDM (`emergency_cure` in the profile) and needs a
+sub job that can cast Cure. Ward timings and the rage lists are at the top of
+`smn_logic.lua`.
+
+#### Haste Samba (DNC and /DNC)
+On DNC main or DNC sub, Lazy uses Haste Samba every 90 seconds while engaged.
+If there isn't 350 TP, or the cast doesn't land within 5 seconds, it keeps
+trying. It goes up before a chain is opened or the DNC rotation runs, and
+never inside an open skillchain window. This replaces the old per-profile
+Haste Samba entries (`self_abilities` / `subjob_abilities`), which are ignored.
 
 Other players' jobs come from the game's party packets, which are sent when
 someone joins, zones or changes job, so a member who was already in the party
@@ -651,7 +695,8 @@ Keys a profile can set (anything else in a profile is ignored):
 | `use_weaponskills` | weaponskill when TP allows |
 | `engage_distance`, `ranged_pull` | how close to get; ranged pull settings (`range`, `engage_distance`) |
 | `ws_sc_starter`, `ws_sc_closers`, `ws_sc_chain` | weaponskills, see [Skillchains](#skillchains) |
-| `needed_buffs`, `food` | buffs/abilities kept up by name, and food to eat |
+| `needed_buffs`, `food` | buffs/abilities kept up by name, and food to eat. Each is tried at most once per 15s so one that is rejected can't block weaponskills |
+| `needed_buff_rules` | per-ability overrides for `needed_buffs`: `['Box Step'] = { interval = 40 }` (seconds between tries), `['Reverse Flourish'] = { min_finishing_moves = 3 }` |
 | `self_buffs` | spells kept up on yourself: `{ name, interval (minutes), fallback }` |
 | `self_abilities` | job abilities with conditions (`require_pet`, `max_mp_percent`, `min_pet_hpp`, `max_pet_hpp`) |
 | `party_buffs` | `{ spell, targets ('ALL_PLAYERS' or { jobs = {...} }), interval, range, self }` |
@@ -659,7 +704,7 @@ Keys a profile can set (anything else in a profile is ignored):
 | `debuffs`, `dispel` | debuffs on the target, and Dispel (only on `dispel_whitelist` mobs) |
 | `debuffs_engaged_only` | `true` = cast the debuffs only once engaged, not while the pull is still pending (RDM) |
 | `debuff_hold_hpp` | RDM: while a debuff is due and castable, weaponskills and nukes wait for it (at most 8 seconds). Above this mob HP% every debuff holds them; at or below it only the first one in the list does (default 50) |
-| `haste_active`, `haste_samba_active`, `haste_targets` | haste handling |
+| `haste_active`, `haste_samba_active`, `haste_targets` | haste handling (Haste Samba itself is the 90s timer above) |
 | `magic_burst`, `burst_spells`, `magic_burst_requires_buff` | burst during skillchain windows: spell family (Fire, Blizzard, Aero, Stone, Thunder, Water, Darkness, Light) mapped to spells, best first |
 | `free_nuke`, `free_nuke_max_tier`, `free_nuke_weather` | BLM/SCH free nuke: on/off, highest tier cast outside bursts (default 4), storm failsafe (default on) |
 | `nuke_weakness`, `nuke_default` | mob name to element for free nukes, see [Free nuke](#free-nuke-blm-and-sch) |
@@ -686,8 +731,7 @@ on), `dispel_whitelist` (mobs Lazy may Dispel/Finale), `haste_blacklist`
 `trust_sacrifice_order` (see [Party join](#party-join)), `party_commands`
 (see [Party commands](#party-commands)), `targeting`
 (`monsters` list, `only_unclaimed`, `only_alive`, `within_origin`),
-`needed_buffs`, `food`, and `subjob_abilities` (for example Haste Samba for
-any job subbing DNC).
+`needed_buffs`, `food`, and `subjob_abilities`.
 
 #### data/settings.xml (per character)
 Written by `//lazy save`, read when the addon loads. Keys under `<global>`
