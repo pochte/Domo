@@ -629,6 +629,7 @@ Currently defined:
 | NIN | Kakka: Ichi, magic burst with Raiton/Hyoton. Weaponskills: open mode is Blade: Ten opener and closer, chain mode (`//lazy chainmode`) is Blade: Shun > Blade: Kamu > Blade: Shun, repeating |
 | THF | Conspirator, Sneak Attack, Trick Attack, Rudra's Storm |
 | WAR | Upheaval opener, Ukko's Fury closer, Hasso/Berserk/Blood Rage/Aggressor, re-provoke if stuck |
+| SMN | Wards (Hastega II, Crystal Blessing, Crimson Howl) and Ifrit’s Favor, rage pacts, Elemental Siphon under 70% MP, rests between ward cycles, emergency cures. No melee |
 
 Mage jobs (WHM, RDM, BLM, GEO, SCH, SMN) load `HealBuffLogic.lua` and
 `RestLogic.lua`, which replace the simpler buff/cure code in `Lazy.lua`;
