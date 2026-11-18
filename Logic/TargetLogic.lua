@@ -110,8 +110,8 @@ if (now - origin_unreachable_since) >= ORIGIN_UNREACHABLE_TIMEOUT then
 windower.add_to_chat(
 2,
 '[Lazy] Origin unreachable for ' ..
-math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60) ..
-' min -- re-anchoring origin and retargeting.'
+ORIGIN_UNREACHABLE_TIMEOUT ..
+' sec -- re-anchoring origin and retargeting.'
 )
 Set_Origin()
 return
@@ -120,8 +120,8 @@ if not path_stuck_alerted then
 windower.add_to_chat(
 167,
 '[Lazy] Origin unreachable at current elevation -- stopping autopath. Will re-anchor here after ' ..
-math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60) ..
-' min if still stuck.'
+ORIGIN_UNREACHABLE_TIMEOUT ..
+' sec if still stuck.'
 )
 path_stuck_alerted = true
 end

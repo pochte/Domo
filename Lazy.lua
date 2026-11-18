@@ -92,7 +92,7 @@ path_stuck_alerted = false
 PATH_STUCK_TIMEOUT = 8
 PATH_STUCK_EPSILON = 1
 origin_unreachable_since = nil
-ORIGIN_UNREACHABLE_TIMEOUT = 600
+ORIGIN_UNREACHABLE_TIMEOUT = 30
 local last_known_pos = nil
 local move_threshold = 0.05
 -- COMBAT STATE
