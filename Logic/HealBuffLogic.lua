@@ -674,29 +674,51 @@ function Buff_Tick()
     --   { name = 'Boost-STR', interval = 3 }
     --   { name = 'Reraise IV', fallback = 'Reraise III', interval = 60 }
     --   { name = { 'Aurorastorm II', 'Aurorastorm' }, interval = 3.2 }
-    for _, buff in ipairs(active_profile.self_buffs or {}) do
-        local names
-        if type(buff.name) == 'table' then
-            names = buff.name
-        elseif buff.fallback then
-            names = { buff.name, buff.fallback }
-        else
-            names = { buff.name }
+    -- Prefer buffs that are not currently active, then fall back to timer refreshes.
+    -- Entrust still blocks self-buffs (same as before).
+    if not Has_Buff_Named('Entrust') then
+        local due = {}
+        for _, buff in ipairs(active_profile.self_buffs or {}) do
+            local names
+            if type(buff.name) == 'table' then
+                names = buff.name
+            elseif buff.fallback then
+                names = { buff.name, buff.fallback }
+            else
+                names = { buff.name }
+            end
+            local key = names[1]
+            local interval = (buff.interval or 20) * 60
+            local last = self_buff_last_cast[key]
+            local buff_ok = true
+            if buff.require_buff and not buffactive[buff.require_buff] then
+                buff_ok = false
+            end
+            if buff_ok and (not last or now - last >= interval) then
+                -- If any variant of this buff is already on us, treat as refresh-only.
+                local already = false
+                for _, name in ipairs(names) do
+                    if Has_Buff_Named(name) then
+                        already = true
+                        break
+                    end
+                end
+                due[#due + 1] = { names = names, key = key, missing = not already }
+            end
         end
-        local key = names[1]
-        local interval = (buff.interval or 20) * 60
-        local last = self_buff_last_cast[key]
-        local buff_ok = not Has_Buff_Named('Entrust')
-        if buff.require_buff and not buffactive[buff.require_buff] then
-            buff_ok = false
-        end
-        if buff_ok and (not last or now - last >= interval) then
-            for _, name in ipairs(names) do
+        table.sort(due, function(a, b)
+            if a.missing ~= b.missing then
+                return a.missing  -- missing buffs first
+            end
+            return false
+        end)
+        for _, entry in ipairs(due) do
+            for _, name in ipairs(entry.names) do
                 local spell = res.spells:with('name', name)
                 if spell and Cast_Spell_On(name, '<me>') then
                     pending_cast = {
                         store = self_buff_last_cast,
-                        key = key,
+                        key = entry.key,
                         spell_id = spell.id,
                         sent_at = now,
                     }

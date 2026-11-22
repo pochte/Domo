@@ -13,17 +13,16 @@ JOB_PROFILES.WHM = {
 		{ name = 'Shellra V', interval = 30 },
 		{ name = 'Auspice', interval = 5 },
 		-- Party bar-spell (AoE). Change to 'Baraero' if you prefer single-target.
-		{ name = 'Baraera', interval = 5 },
-		{ name = 'Boost-STR', interval = 3 },
+		{ name = 'Baraera', interval = 4.5 },
+		{ name = 'Boost-STR', interval = 2.5 },  -- buff lasts ~3 min; refresh early
 		{ name = 'Reraise IV', fallback = 'Reraise III', interval = 60 },
-		{ name = 'Aurorastorm II', fallback = 'Aurorastorm', interval = 3.2 },
+		{ name = 'Aurorastorm', interval = 3.2 },
 	},
 
 	-- Soft top-up: cast Regen when someone is missing HP but not enough for a cure.
 	-- min_hpp / max_hpp are inclusive. interval is minutes between regens on the same person.
 	regen = {
-		spell = 'Regen IV',
-		fallback = 'Regen III',
+		spell = { 'Regen IV', 'Regen III', 'Regen II' },
 		min_hpp = 75,
 		max_hpp = 99,
 		interval = 1.5,

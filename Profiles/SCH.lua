@@ -35,6 +35,16 @@ JOB_PROFILES.SCH = {
 	magic_burst = true,
 	cure_bot_if_no_whm = true,
 
+	-- Soft top-up when someone is missing HP but not enough for a cure.
+	regen = {
+		spell = { 'Regen V', 'Regen IV', 'Regen III' },
+		min_hpp = 75,
+		max_hpp = 99,
+		interval = 1.5,
+		range = 20,
+		self = true,
+	},
+
 	-- CURE TIERS
 	cure_tiers = {
 		{ max_missing = 250,  spells = { 'Cure II', 'Cure' } },
