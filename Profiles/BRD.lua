@@ -1,31 +1,48 @@
--- BRD JOB PROFILE 
---
--- Bard -- Party songs, self buffs.
---
--- Loaded by Domo.lua into JOB_PROFILES.BRD 
 JOB_PROFILES.BRD = {
-	-- MELEE / ENGAGE SETTINGS
-	auto_engage = false,
-	use_weaponskills = false,
-	haste_active = false,
-	self_buffs = {},
-	-- PARTY SONGS
-	party_buffs = {
-		{
-			spell    = 'Honor March',
-			targets  = 'ALL_PLAYERS',
-			interval = 3,
-			range    = 20,
-			self     = true,
-		},
-		{
-			spell    = "Knight's Minne V",
-			targets  = 'ALL_PLAYERS',
-			interval = 3,
-			range    = 20,
-			self     = true,
-		},
-	},
-	needed_buffs = {},
-	food = 'Red Curry Bun',
+    auto_engage = true,
+
+    song_capacity = 5,
+
+    -- How often Domo refreshes songs.
+    song_refresh_seconds = 240,
+    party_song_refresh_seconds = 180,
+    debuff_refresh_seconds = 60,
+
+    dummy_songs = {
+        "Knight's Minne V",
+        "Knight's Minne IV",
+        "Army's Paeon VI",
+        "Army's Paeon V",
+        "Archer's Prelude",
+    },
+
+    songs = {
+        'Honor March',
+        'Valor Minuet V',
+        'Valor Minuet V',
+        'Blade Madrigal',
+        'Aria of Passion',
+    },
+
+    party_songs = {
+        {
+            spell = 'Mage\'s Ballad III',
+            targets = {
+                players_only = true,
+                jobs = { 'WHM', 'RDM', 'BLM', 'GEO', 'SCH', 'SMN' },
+            },
+        },
+    },
+
+    debuffs = {
+        'Carnage Elegy',
+        'Wind Threnody',
+    },
+
+    abilities = {
+        clarion_call = true,
+        troubadour = true,
+        marcato = true,
+        pianissimo = true,
+    },
 }
