@@ -131,8 +131,12 @@ active_profile = nil
 -- JOB PROFILES
 JOB_PROFILES = {}
 local profile_list = {
-'RDM', 'GEO', 'BLM', 'SCH', 'DNC',
-'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'
+    'WHM', 'RDM', 'BLM', 'SCH', 'GEO', 'SMN', 'BLU',
+    'WAR', 'MNK', 'THF', 'DNC', 'NIN', 'SAM', 'DRG',
+    'PLD', 'RUN',
+    'BRD', 'COR', 'RNG',
+    'BST', 'PUP',
+    'DEFAULT',
 }
 for _, job in ipairs(profile_list) do
 local path = windower.addon_path .. 'profiles/' .. job .. '.lua'
