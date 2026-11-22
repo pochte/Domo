@@ -683,6 +683,7 @@ local DEFAULT_PHRASES = {
     hold = 'hold', resume = 'resume', regroup = 'regroup', rebuff = 'rebuff',
     tnl = 'tnl', rezzing = 'rezzing',
     trust_dismiss = 'trust dismiss', trust_summon = 'trust summon',
+    inv = 'inv',
 }
 
 local DEFAULT_WARP_ITEMS = {
@@ -2104,6 +2105,62 @@ local function Trust_Phrase_Match(text)
     return nil
 end
 
+-- "inv <name>": trusted player vouches for someone. Every Domo adds them to
+-- the trusted list; only the party leader runs the full join/invite flow.
+local function Inv_Phrase_Match(text)
+    local p = Phrase('inv')
+
+    if text:sub(1, #p + 1) == p .. ' ' then
+        local arg = text:sub(#p + 2):match('^%s*(.-)%s*$')
+
+        if arg ~= '' then
+            return arg
+        end
+    end
+
+    return nil
+end
+
+local function Run_Inv_Command(name, sender)
+    if not Start_Engine then
+        return
+    end
+
+    if type(name) ~= 'string' or name == '' then
+        return
+    end
+
+    -- Strip accidental quotes.
+    name = name:gsub('^["\'](.*)["\']$', '%1')
+    name = name:match('^%s*(.-)%s*$') or name
+
+    local added = Party_Add_Trusted_Player(name)
+
+    if added then
+        Say('Added ' .. name .. ' to the trusted list (' .. sender .. ').')
+    else
+        Say(name .. ' is already trusted (' .. sender .. ').')
+    end
+
+    -- Only the leader (or a solo character) runs the invite/join routine so
+    -- the whole party does not spam /pcmd add.
+    local should_join = true
+
+    if Is_Party_Leader then
+        local ok, is_leader = pcall(Is_Party_Leader)
+
+        if ok then
+            should_join = is_leader and true or false
+        end
+    end
+
+    if should_join then
+        Party_Join_Begin(name)
+    else
+        Say('Leader will handle the invite for ' .. name .. '.')
+    end
+end
+
 -- Dismiss puts every Domo on hold (like "hold"); the party leader then does
 -- the dismissing/summoning (TrustLogic.lua). Say "resume" afterwards.
 local function Run_Trust_Command(kind, arg, sender)
@@ -2142,6 +2199,18 @@ windower.register_event('chat message', function(message, sender, mode, gm)
             rez_claim_until = os.clock() + 25
         end
 
+        return
+    end
+
+    local inv_name = Inv_Phrase_Match(text)
+
+    if inv_name then
+        if not is_self and not Party_Is_Trusted(sender) then
+            Say('Ignored "' .. text .. '" from ' .. sender .. ' (not trusted).')
+            return
+        end
+
+        Run_Inv_Command(inv_name, sender)
         return
     end
 
@@ -2184,6 +2253,18 @@ function Party_Command(command, args, raw_args)
             Party_Join_Begin(raw_args[2])
         end
 
+        return true
+    end
+
+    -- Trusted vouch: add to trusted list + run join (same as party chat "inv <name>").
+    if command == 'inv' then
+        if not raw_args[2] or raw_args[2] == '' then
+            print('//domo inv <name>')
+            return true
+        end
+
+        local name = table.concat(raw_args, ' ', 2)
+        Run_Inv_Command(name, 'console')
         return true
     end
 
@@ -2297,6 +2378,13 @@ function Party_Command(command, args, raw_args)
 
     if command == 'party' then
         local phrase = Normalize(table.concat(raw_args, ' ', 2))
+        local inv_name = Inv_Phrase_Match(phrase)
+
+        if inv_name then
+            Run_Inv_Command(inv_name, 'console')
+            return true
+        end
+
         local trust_kind, trust_arg = Trust_Phrase_Match(phrase)
 
         if trust_kind then
@@ -2311,7 +2399,7 @@ function Party_Command(command, args, raw_args)
             end
         end
 
-        print('//domo party <reset|go home|stop|start|hold|resume|regroup|rebuff|tnl|trust dismiss <name>|trust summon <name>>')
+        print('//domo party <reset|go home|stop|start|hold|resume|regroup|rebuff|tnl|inv <name>|trust dismiss <name>|trust summon <name>>')
 
         return true
     end
@@ -2323,6 +2411,7 @@ end
 function Party_Command_Help()
     print('//domo join <name>   (same as them telling you the phrase)')
     print('//domo join cancel')
+    print('//domo inv <name>    (trust + invite; party chat: inv <name>)')
     print('//domo phrase                 (show the current join phrase)')
     print('//domo setphrase <words>      (set + save the private join phrase)')
     print('//domo sync <name>   (level sync to that party member)')
@@ -2333,4 +2422,5 @@ function Party_Command_Help()
     print('//domo party <phrase>   (run a party command locally)')
     print('Party chat: reset | go home | stop | start | hold | resume | regroup | rebuff | tnl')
     print('Party chat: trust dismiss <name> (holds everyone) | trust summon <name>')
+    print('Party chat: inv <name>   (trusted player vouches; adds to trusted list + invite)')
 end
