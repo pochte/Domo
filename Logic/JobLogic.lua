@@ -4,11 +4,11 @@ function Safe_Tick(name, fn)
     local ok, err = pcall(fn)
     if not ok and last_tick_error[name] ~= err then
         last_tick_error[name] = err
-        windower.add_to_chat(167, '[Lazy] ' .. name .. ' error: ' .. tostring(err))
+        windower.add_to_chat(167, '[Domo] ' .. name .. ' error: ' .. tostring(err))
     end
 end
 -- PROFILE HELPERS
--- WEAPONSKILL MODE (//lazy chainmode, //lazy openmode, //lazy partychain)
+-- WEAPONSKILL MODE (//domo chainmode, //domo openmode, //domo partychain)
 --   chain: fire the ordered ws_sc_chain (up to 5 steps) when one exists.
 --   open:  opener + closers only: ws_sc_starter / ws_sc_closers, where the
 --          closer is whichever one continues the open skillchain.
@@ -102,7 +102,7 @@ function Set_WS_Mode(mode)
         if not chain then
             windower.add_to_chat(
                 167,
-                '[Lazy] No ws_sc_chain for this profile, staying in open mode. ' ..
+                '[Domo] No ws_sc_chain for this profile, staying in open mode. ' ..
                 'Add one to the profile (or settings.lua) first.'
             )
             return
@@ -110,7 +110,7 @@ function Set_WS_Mode(mode)
         ws_mode = 'chain'
         windower.add_to_chat(
             2,
-            '[Lazy] WS mode: CHAIN, ' .. #chain .. ' steps: ' .. WS_Names(chain)
+            '[Domo] WS mode: CHAIN, ' .. #chain .. ' steps: ' .. WS_Names(chain)
         )
         return
     end
@@ -119,7 +119,7 @@ function Set_WS_Mode(mode)
         local starter = Get_WS_Starter()
         windower.add_to_chat(
             2,
-            '[Lazy] WS mode: PARTYCHAIN. Opens with ' ..
+            '[Domo] WS mode: PARTYCHAIN. Opens with ' ..
             tostring(starter and starter[1]) ..
             ', then continues any open skillchain with the best weaponskill ' ..
             'you have: highest skillchain level first.'
@@ -130,7 +130,7 @@ function Set_WS_Mode(mode)
     local starter = Get_WS_Starter()
     windower.add_to_chat(
         2,
-        '[Lazy] WS mode: OPEN, opener: ' .. tostring(starter and starter[1]) ..
+        '[Domo] WS mode: OPEN, opener: ' .. tostring(starter and starter[1]) ..
         ', closers: ' .. WS_Names(Get_WS_Closers())
     )
 end
@@ -265,9 +265,9 @@ function Finishing_Move_Count()
     end
     return 0
 end
--- Gates for self abilities (Lazy.lua / HealBuffLogic.lua self-ability loops).
+-- Gates for self abilities (Domo.lua / HealBuffLogic.lua self-ability loops).
 -- Sambas cost TP and need you engaged, and a rejected JA never starts its recast,
--- so without these checks Lazy sent Haste Samba out of combat, got rejected, and
+-- so without these checks Domo sent Haste Samba out of combat, got rejected, and
 -- then waited the whole interval. Optional per-entry fields override the defaults:
 --   require_engaged, min_tp, skip_if_buff
 local self_ability_note_last = {}
@@ -275,7 +275,7 @@ local function Self_Ability_Note(name, text)
     local now = os.clock()
     if now - (self_ability_note_last[name] or -99) >= 10 then
         self_ability_note_last[name] = now
-        windower.add_to_chat(207, '[Lazy] ' .. name .. ': ' .. text)
+        windower.add_to_chat(207, '[Domo] ' .. name .. ': ' .. text)
     end
 end
 function Self_Ability_Gates_Ok(ab, player)

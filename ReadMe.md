@@ -1,8 +1,8 @@
-# Lazy
+# Domo
 
 A Windower addon for automating FFXI farming while you're away from the keyboard.
 
-Lazy hunts mobs, fights, manages job abilities and spells, maintains buffs, heals the party, and handles Trust recovery. It can also coordinate multiple Lazy characters through party chat.
+Domo hunts mobs, fights, manages job abilities and spells, maintains buffs, heals the party, and handles Trust recovery. It can also coordinate multiple Domo characters through party chat.
 
 ## Features
 
@@ -20,12 +20,12 @@ Lazy hunts mobs, fights, manages job abilities and spells, maintains buffs, heal
 ## Installation
 
 1. Open your Windower `Addons` folder.
-2. Create a folder named `Lazy`.
+2. Create a folder named `Domo`.
 3. Copy the addon files into it, preserving the folder structure.
 
 ```text
-Lazy/
-├── Lazy.lua
+Domo/
+├── Domo.lua
 ├── settings.lua
 ├── skills.lua
 ├── profiles/
@@ -57,18 +57,18 @@ Lazy/
 
 ## Commands
 
-All commands use `//lazy`.
+All commands use `//domo`.
 
 | Command | Description |
 |---|---|
-| `start` / `stop` | Start or stop Lazy |
+| `start` / `stop` | Start or stop Domo |
 | `reload` | Reload the addon and restart if it was running |
 | `save` | Save the current character's settings |
 | `show` | Display current settings and modes |
 | `debug on\|off` | Toggle debug logging |
 | `leader` | Enable leader mode and automatic targeting |
 | `follower [name]` | Assist a player, or the party leader if omitted |
-| `semiauto` | Semi-Auto mode: you pick targets, walk and engage; Lazy fights once you are engaged |
+| `semiauto` | Semi-Auto mode: you pick targets, walk and engage; Domo fights once you are engaged |
 | `autotarget on\|off` | Toggle automatic hunting |
 | `target "Monster"` | Hunt a specific monster name |
 | `fight` | Set the current target as the hunting target |
@@ -96,33 +96,33 @@ All commands use `//lazy`.
 
 ### Startup behavior
 
-`//lazy start` records your current position as the hunting origin, loads your main-job profile, snapshots your Trusts, and starts the combat and monitoring loops.
+`//domo start` records your current position as the hunting origin, loads your main-job profile, snapshots your Trusts, and starts the combat and monitoring loops.
 
-If neither follower mode nor a custom targeting mode is selected, Lazy defaults to leader mode with autotarget enabled.
+If neither follower mode nor a custom targeting mode is selected, Domo defaults to leader mode with autotarget enabled.
 
-Lazy will not start while your character is dead. If you die while running, it can request a raise through party chat and accept the raise automatically. The party waits for Weakness to wear off before resuming.
+Domo will not start while your character is dead. If you die while running, it can request a raise through party chat and accept the raise automatically. The party waits for Weakness to wear off before resuming.
 
-`//lazy reload` saves current settings, reloads the addon and its profiles, and restarts Lazy if it was running.
+`//domo reload` saves current settings, reloads the addon and its profiles, and restarts Domo if it was running.
 
 ---
 
 ## Targeting and combat
 
-Lazy can run in two main modes:
+Domo can run in two main modes:
 
 - **Leader:** Automatically finds eligible monsters around the starting position.
 - **Follower:** Assists a specified player or the party leader. Autotarget is disabled.
-- **Semi-Auto:** You pick targets, walk and engage by hand. Once you are engaged Lazy runs the same combat logic as the other modes and may move to keep the fight going; buffs, cures and other support logic always run. Lazy never selects a target, walks you anywhere or engages before you do, and it only acts offensively on a mob that is engaged or already claimed by your party. `regroup` just prints "go join everyone else".
+- **Semi-Auto:** You pick targets, walk and engage by hand. Once you are engaged Domo runs the same combat logic as the other modes and may move to keep the fight going; buffs, cures and other support logic always run. Domo never selects a target, walks you anywhere or engages before you do, and it only acts offensively on a mob that is engaged or already claimed by your party. `regroup` just prints "go join everyone else".
 
-The hunting radius is controlled by `//lazy range` (default 10 yalms). Targeting rules, including eligible monsters and whether claimed or defeated mobs are ignored, are configured in `settings.lua`.
+The hunting radius is controlled by `//domo range` (default 10 yalms). Targeting rules, including eligible monsters and whether claimed or defeated mobs are ignored, are configured in `settings.lua`.
 
-`//lazy fight` sets the currently selected monster as the hunting target. `//lazy target "Monster"` sets a specific monster name instead.
+`//domo fight` sets the currently selected monster as the hunting target. `//domo target "Monster"` sets a specific monster name instead.
 
 Job profiles control whether a character engages in melee, uses weaponskills, casts spells, or stays out of combat.
 
 ## Weaponskills and skillchains
 
-Lazy supports three weaponskill approaches:
+Domo supports three weaponskill approaches:
 
 - **Chain mode:** Uses an ordered `ws_sc_chain` of up to five weaponskills.
 - **Open mode:** Uses `ws_sc_starter` to open and `ws_sc_closers` to continue a skillchain.
@@ -144,7 +144,7 @@ These settings can be defined in a job profile or in `settings.lua`. Profile val
 
 ## Magic and nuking
 
-Magic bursts happen at the end of a skillchain rather than immediately when a window opens. Lazy waits for the chain to close or remain untouched for the configured quiet period.
+Magic bursts happen at the end of a skillchain rather than immediately when a window opens. Domo waits for the chain to close or remain untouched for the configured quiet period.
 
 Supported bursting jobs include BLM, SCH, GEO, RDM, WHM, and profiles with appropriate magic-burst support.
 
@@ -161,7 +161,7 @@ Relevant settings include `burst_when`, `burst_quiet`, `burst_elements`, `nuke_w
 
 ## Party join: "chicken nuggets"
 
-A player can join a running Lazy party by sending a tell containing the configured phrase. The default phrase is:
+A player can join a running Domo party by sending a tell containing the configured phrase. The default phrase is:
 
 ```text
 chicken nuggets
@@ -169,7 +169,7 @@ chicken nuggets
 
 The phrase can appear alongside other words, and capitalization or punctuation does not matter.
 
-Lazy must be running to respond. The join process:
+Domo must be running to respond. The join process:
 
 1. Pauses new pulls and lets an active fight finish.
 2. Makes room by dismissing Trusts if necessary.
@@ -178,15 +178,15 @@ Lazy must be running to respond. The join process:
 5. Rebalances the Trust lineup to fit the new party member.
 6. Resumes normal operation.
 
-Trusts matching the new player's job are prioritized for removal; otherwise, Lazy uses `trust_sacrifice_order`.
+Trusts matching the new player's job are prioritized for removal; otherwise, Domo uses `trust_sacrifice_order`.
 
 Only players with master level 1 or higher are considered for automatic level-sync selection.
 
 You can also initiate the same process manually:
 
 ```text
-//lazy join PlayerName
-//lazy join cancel
+//domo join PlayerName
+//domo join cancel
 ```
 
 ### Trusted players
@@ -208,19 +208,19 @@ The list is private to your installation and persists between sessions.
 Manage the list in game:
 
 ```text
-//lazy trust add PlayerName
-//lazy trust remove PlayerName
-//lazy trust list
-//lazy trust clear
+//domo trust add PlayerName
+//domo trust remove PlayerName
+//domo trust list
+//domo trust clear
 ```
 
-If an older trusted-player setting exists, Lazy imports it when the trusted-player file is first created.
+If an older trusted-player setting exists, Domo imports it when the trusted-player file is first created.
 
 ---
 
 ## Party commands
 
-Every running Lazy character listens for configured phrases in party chat. Each character checks the sender against its own trusted-player list.
+Every running Domo character listens for configured phrases in party chat. Each character checks the sender against its own trusted-player list.
 
 Say the phrase as the **entire party-chat line**. For example:
 
@@ -235,8 +235,8 @@ Say the phrase as the **entire party-chat line**. For example:
 | Phrase | Action |
 |---|---|
 | `reset` | Re-anchor the hunting origin and clear abandoned-target tracking |
-| `go home` | Warp out, stop Lazy, and print session statistics |
-| `stop` / `start` | Stop or start Lazy |
+| `go home` | Warp out, stop Domo, and print session statistics |
+| `stop` / `start` | Stop or start Domo |
 | `hold` | Stop new pulls and allow current fights to finish |
 | `resume` | Resume operation with a new origin |
 | `regroup` | Move everyone to the party leader and hold (Semi-Auto characters only get a message) |
@@ -247,11 +247,11 @@ Say the phrase as the **entire party-chat line**. For example:
 
 Phrases can be renamed in `settings.lua` under `party_commands.phrases`.
 
-`//lazy party <phrase>` runs a party command on the current character only.
+`//domo party <phrase>` runs a party command on the current character only.
 
 ### Raises, Doom and debuff cleansing
 
-These systems work automatically while Lazy is running:
+These systems work automatically while Domo is running:
 
 - **Raises:** Party members coordinate raises, prioritizing WHM, SCH, RDM, PLD, then jobs with a raising subjob. The raised character accepts the raise and the party waits for Weakness to wear off.
 - **Doom:** A doomed character uses Holy Water when available and requests Cursna from party members who can cast it.
@@ -268,13 +268,13 @@ Cleansing requires the cure system to be enabled.
 3. Warp Cudgel
 4. Instant Warp
 
-The item list can be changed with `party_commands.go_home_items`. If no warp method is available, Lazy logs out.
+The item list can be changed with `party_commands.go_home_items`. If no warp method is available, Domo logs out.
 
 ---
 
 ## Job profiles
 
-Lazy detects the main job and loads the corresponding file from `profiles/`. Profiles define combat behavior, buffs, debuffs, weaponskills, cures, magic bursts, abilities, and food.
+Domo detects the main job and loads the corresponding file from `profiles/`. Profiles define combat behavior, buffs, debuffs, weaponskills, cures, magic bursts, abilities, and food.
 
 Current profiles:
 
@@ -295,7 +295,7 @@ Current profiles:
 
 Jobs without a profile use `DEFAULT`, which does not engage or use weaponskills.
 
-To add a job, create `profiles/<JOB>.lua` and add it to the profile list in `Lazy.lua`.
+To add a job, create `profiles/<JOB>.lua` and add it to the profile list in `Domo.lua`.
 
 Job-specific logic is loaded from `Logic/` when required. For example, DNC uses `dnc_logic.lua`, COR uses `rolls.lua`, and SMN uses `smn_logic.lua`.
 
@@ -314,11 +314,11 @@ Shared configuration edited by hand. It contains defaults and rules used across 
 - Party join and Trust configuration
 - Party commands, raise behavior and cleansing rules
 
-Reload changes with `//lazy reload`.
+Reload changes with `//domo reload`.
 
 ### `data/settings.xml`
 
-Per-character settings saved by `//lazy save` and loaded when the addon starts.
+Per-character settings saved by `//domo save` and loaded when the addon starts.
 
 Settings can have a `<global>` section and character-specific sections. Character settings override global values.
 
@@ -326,7 +326,7 @@ This file stores individual character preferences such as the current target, as
 
 ### `data/trusted_players.txt`
 
-Private persistent list of players allowed to use party commands and request party joins. Managed in game with `//lazy trust`.
+Private persistent list of players allowed to use party commands and request party joins. Managed in game with `//domo trust`.
 
 Both data files should be excluded from version control.
 
@@ -334,7 +334,7 @@ Both data files should be excluded from version control.
 
 ## Session statistics
 
-`//lazy tnl` displays:
+`//domo tnl` displays:
 
 - Session duration
 - Kills
@@ -343,7 +343,7 @@ Both data files should be excluded from version control.
 - EXP remaining to the next level
 - Estimated time to level
 
-Statistics begin when `//lazy start` runs. A kill is counted when it awards EXP or limit points.
+Statistics begin when `//domo start` runs. A kill is counted when it awards EXP or limit points.
 
 The same statistics are printed when using `go home`.
 
@@ -354,12 +354,12 @@ The same statistics are printed when using `go home`.
 Use:
 
 ```text
-//lazy debug on
-//lazy debug off
+//domo debug on
+//domo debug off
 ```
 
 Debug output includes target changes, `/attack` safety-gate traces, and relevant party permission packets. Additional logs are written to `TargetLogic_Debug.txt`.
 
 The `/attack` safety gate is always active, even when debug logging is disabled.
 
-For issues, include the relevant `[Lazy]` chat output and debug log when reporting a problem.
+For issues, include the relevant `[Domo]` chat output and debug log when reporting a problem.

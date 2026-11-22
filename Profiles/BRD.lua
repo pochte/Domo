@@ -2,7 +2,7 @@
 --
 -- Bard -- Party songs, self buffs.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.BRD 
+-- Loaded by Domo.lua into JOB_PROFILES.BRD 
 JOB_PROFILES.BRD = {
 	-- MELEE / ENGAGE SETTINGS
 	auto_engage = false,

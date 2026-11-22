@@ -80,7 +80,7 @@ function Cure_Bot_Tick()
                     if failsafe then
                         windower.add_to_chat(
                             167,
-                            '[Lazy] Failsafe cure -- ' .. target_name .. ' at ' .. worst_hpp .. '% HP, no healer response'
+                            '[Domo] Failsafe cure -- ' .. target_name .. ' at ' .. worst_hpp .. '% HP, no healer response'
                         )
                     end
                     windower.send_command('input /follow off')
@@ -204,7 +204,7 @@ function Entrust_Debug(key, msg)
     local t = os.clock()
     if entrust_dbg_last[key] and t - entrust_dbg_last[key] < 5 then return end
     entrust_dbg_last[key] = t
-    windower.add_to_chat(207, '[Lazy][Entrust] ' .. msg)
+    windower.add_to_chat(207, '[Domo][Entrust] ' .. msg)
 end
 
 -- Why Can_Cast_Ability said no, for the debug output.
@@ -622,7 +622,7 @@ function Buff_Tick()
             then
                 local spell = res.spells:with('name', dispel_cfg.spell)
                 if spell and Cast_Spell_On(dispel_cfg.spell, '<t>') then
-                    windower.add_to_chat(207, '[Lazy] Safety-cast ' .. dispel_cfg.spell .. ' on ' .. target.name .. '.')
+                    windower.add_to_chat(207, '[Domo] Safety-cast ' .. dispel_cfg.spell .. ' on ' .. target.name .. '.')
                     pending_cast = {
                         store = dispel_last_cast,
                         key = dispel_cfg.spell,
@@ -670,8 +670,19 @@ function Buff_Tick()
         end
     end
     -- SELF BUFFS
+    -- Supports:
+    --   { name = 'Boost-STR', interval = 3 }
+    --   { name = 'Reraise IV', fallback = 'Reraise III', interval = 60 }
+    --   { name = { 'Aurorastorm II', 'Aurorastorm' }, interval = 3.2 }
     for _, buff in ipairs(active_profile.self_buffs or {}) do
-        local names = type(buff.name) == 'table' and buff.name or {buff.name}
+        local names
+        if type(buff.name) == 'table' then
+            names = buff.name
+        elseif buff.fallback then
+            names = { buff.name, buff.fallback }
+        else
+            names = { buff.name }
+        end
         local key = names[1]
         local interval = (buff.interval or 20) * 60
         local last = self_buff_last_cast[key]
@@ -690,6 +701,64 @@ function Buff_Tick()
                         sent_at = now,
                     }
                     return
+                end
+            end
+        end
+    end
+
+    -- SOFT REGEN: party members missing a little HP, but not enough for a cure.
+    -- Profile:
+    --   regen = { spell = 'Regen IV', fallback = 'Regen III', min_hpp = 75, max_hpp = 99, interval = 1.5, range = 20, self = true }
+    if active_profile.regen then
+        local rg = active_profile.regen
+        local spell_names
+        if type(rg.spell) == 'table' then
+            spell_names = rg.spell
+        elseif rg.fallback then
+            spell_names = { rg.spell, rg.fallback }
+        else
+            spell_names = { rg.spell or 'Regen IV' }
+        end
+        local min_hpp = rg.min_hpp or 75
+        local max_hpp = rg.max_hpp or 99
+        local interval = (rg.interval or 1.5) * 60
+        local range = rg.range or 20
+        local include_self = rg.self ~= false
+        local me_zone = windower.ffxi.get_info().zone
+        local party = windower.ffxi.get_party()
+        if party then
+            local best
+            for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+                local m = party[key]
+                if m and m.name and m.hp and m.hp > 0 and m.hpp
+                    and m.hpp >= min_hpp and m.hpp <= max_hpp
+                    and m.zone == me_zone
+                    and m.mob and m.mob.id and not m.mob.is_npc
+                    and m.mob.distance and math.sqrt(m.mob.distance) <= range
+                    and (include_self or key ~= 'p0')
+                then
+                    local cache_key = 'regen:' .. m.name
+                    local last = party_buff_last_cast[cache_key]
+                    if not last or now - last >= interval then
+                        if not best or m.hpp < best.hpp then
+                            best = { name = m.name, hpp = m.hpp, key = cache_key }
+                        end
+                    end
+                end
+            end
+            if best then
+                for _, spell_name in ipairs(spell_names) do
+                    local spell = res.spells:with('name', spell_name)
+                    local target = (best.name == player.name) and '<me>' or best.name
+                    if spell and Cast_Spell_On(spell_name, target) then
+                        pending_cast = {
+                            store = party_buff_last_cast,
+                            key = best.key,
+                            spell_id = spell.id,
+                            sent_at = now,
+                        }
+                        return
+                    end
                 end
             end
         end

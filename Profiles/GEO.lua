@@ -16,7 +16,7 @@ JOB_PROFILES.GEO = {
         { name = 'Indi-Fury', interval = 3 },
     },
 
-    -- FREE NUKE (//lazy freenuke).
+    -- FREE NUKE (//domo freenuke).
     -- Tier IV and lower are cast on the target between bursts;
     -- V and VI are saved for magic burst.
     free_nuke = true,

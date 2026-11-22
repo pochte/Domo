@@ -4,7 +4,7 @@
 -- Job-specific rotations, buffs, food, and combat behaviour
 -- belong in profiles/*.lua and are handled by JobLogic.lua.
 --
--- Reload in-game with: //lazy reload
+-- Reload in-game with: //domo reload
 
 
 -- WEAPON SKILL FALLBACKS
@@ -37,8 +37,8 @@ nuke_weakness = {
 
 -- FINISHER
 
--- //lazy finisher on/off
--- //lazy finisher <hp%>
+-- //domo finisher on/off
+-- //domo finisher <hp%>
 
 finisher_enabled = true
 finisher_hp = 10
@@ -75,14 +75,14 @@ haste_blacklist = {
 -- PARTY JOIN
 
 -- A trusted player can send a tell containing the configured phrase.
--- Lazy pauses new pulls, invites them, level-syncs, and rebalances Trusts.
+-- Domo pauses new pulls, invites them, level-syncs, and rebalances Trusts.
 --
 -- Real players who join your party are automatically added to
 -- data/trusted_players.txt. Leaving the party does not remove them.
 --
 -- The same trusted list controls party-chat commands and party-join requests.
 -- An empty list permits everyone until players are added automatically
--- or manually with //lazy trust add.
+-- or manually with //domo trust add.
 
 party_join = {
     enabled = true,
@@ -99,18 +99,18 @@ party_join = {
 --
 -- Permissions use the private list in data/trusted_players.txt.
 -- Manage it with:
---   //lazy trust add <name>
---   //lazy trust remove <name>
---   //lazy trust list
---   //lazy trust clear
+--   //domo trust add <name>
+--   //domo trust remove <name>
+--   //domo trust list
+--   //domo trust clear
 --
 -- An empty list permits everyone. Real party members are automatically added.
 --
 -- Commands:
 --   reset     Re-anchor the origin where each character stands.
---   go home   Warp using the configured items, stop Lazy, and print stats.
---   stop      Stop Lazy on everyone.
---   start     Start Lazy on everyone.
+--   go home   Warp using the configured items, stop Domo, and print stats.
+--   stop      Stop Domo on everyone.
+--   start     Start Domo on everyone.
 --   hold      Stop new pulls until resume.
 --   resume    Continue and set a new origin.
 --   regroup   Run to the party leader and hold.

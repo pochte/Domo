@@ -1,4 +1,4 @@
---Lazy Lua--
+--Domo Lua--
 require('chat')
 require('logger')
 require('tables')
@@ -43,7 +43,7 @@ loaded_job_logic.MAGE = true
 Start_Rest_Monitor()
 end
 end
--- RestLogic.lua's Rest_Monitor runs once per //lazy start, and only once
+-- RestLogic.lua's Rest_Monitor runs once per //domo start, and only once
 -- the mage logic has been loaded.
 rest_monitor_started = false
 function Start_Rest_Monitor()
@@ -68,10 +68,10 @@ within_origin = true,
 only_unclaimed = true,
 }
 -- ADDON
-_addon.name = 'lazy'
+_addon.name = 'Domo'
 _addon.author = 'Ulli'
 _addon.version = '0.9'
-_addon.commands = {'lazy'}
+_addon.commands = {'Domo'}
 -- GLOBAL STATE
 Start_Engine = false
 isCasting = false
@@ -144,19 +144,19 @@ local ok, result = pcall(dofile, path)
 if not ok then
 windower.add_to_chat(
 167,
-'[Lazy] ERROR loading ' .. job .. '.lua: '
+'[Domo] ERROR loading ' .. job .. '.lua: '
 .. tostring(result)
 )
 windower.add_to_chat(
 167,
-'[Lazy] ' .. job
+'[Domo] ' .. job
 .. ' profile NOT loaded. Fix the error above, '
-.. 'then run //lua reload lazy.'
+.. 'then run //lua reload Domo.'
 )
 elseif type(JOB_PROFILES[job]) ~= 'table' then
 windower.add_to_chat(
 167,
-'[Lazy] ERROR: ' .. job
+'[Domo] ERROR: ' .. job
 .. '.lua did not define JOB_PROFILES.'
 .. job .. ' as a table.'
 )
@@ -164,7 +164,7 @@ end
 else
 windower.add_to_chat(
 123,
-'[Lazy] Profile not found: ' .. job
+'[Domo] Profile not found: ' .. job
 .. '.lua — using DEFAULT if available.'
 )
 end
@@ -214,7 +214,7 @@ entrust_ability_last_success = {}
 dispel_last_cast = {}
 mob_spell_last_cast = {}
 Load_Profile_Logic(job)
-windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
+windower.add_to_chat(2, '[Domo] Main job: ' .. job)
 end
 -- PROFILE HELPERS
 function Get_Food()
@@ -253,7 +253,7 @@ dofile(windower.addon_path .. 'Logic/LeaderLogic.lua')
 -- Clickable button panel. A failure here must never stop the addon loading.
 local ui_ok, ui_err = pcall(dofile, windower.addon_path .. 'ui/UI.lua')
 if not ui_ok then
-windower.add_to_chat(167, '[Lazy] Button panel failed to load: ' .. tostring(ui_err))
+windower.add_to_chat(167, '[Domo] Button panel failed to load: ' .. tostring(ui_err))
 end
 -- INCOMING PACKETS
 windower.register_event('incoming chunk', function(id, data)
@@ -309,19 +309,19 @@ end
 if Party_Death_Begin and Party_Death_Begin() then
 windower.add_to_chat(
 167,
-'[Lazy] You died -- killed by ' .. cause .. '. Asking the party for a rez.'
+'[Domo] You died -- killed by ' .. cause .. '. Asking the party for a rez.'
 )
 else
 windower.add_to_chat(
 167,
-'[Lazy] You died -- killed by ' .. cause .. '. Stopping Lazy.'
+'[Domo] You died -- killed by ' .. cause .. '. Stopping Domo.'
 )
 Start_Engine = false
 end
 elseif Party_Rez_Timeout and death_since
 and os.clock() - death_since > Party_Rez_Timeout()
 then
-windower.add_to_chat(167, '[Lazy] No raise arrived in time. Stopping Lazy.')
+windower.add_to_chat(167, '[Domo] No raise arrived in time. Stopping Domo.')
 Start_Engine = false
 end
 else
@@ -332,7 +332,7 @@ coroutine.sleep(0.5)
 end
 end
 -- NOTE: Engagement_Sync() is defined once, in TargetLogic.lua.
--- It is only scheduled from here (see //lazy start).
+-- It is only scheduled from here (see //domo start).
 -- OUTGOING PACKETS
 windower.register_event('outgoing chunk', function(id, data)
 if id ~= 0x015 then return end
@@ -348,34 +348,34 @@ args[i] = string.lower(tostring(v))
 end
 local command = args[1]
 if not command or command == 'help' then
-print('Lazy commands:')
-print('//lazy start')
-print('//lazy stop')
-print('//lazy reload')
-print('//lazy save')
-print('//lazy show')
-print('//lazy debug on/off')
-print('//lazy leader')
-print('//lazy semiauto   (you pick targets, walk and engage; Lazy fights once you are engaged)')
-print('//lazy follower [player|<t>]   (no name: party leader, then whoever invited you, then your target)')
-print('//lazy autotarget on/off')
-print('//lazy target <name>')
-print('//lazy fight')
-print('//lazy buffs on/off')
-print('//lazy cure on/off')
-print('//lazy rest on/off')
-print('//lazy range <yalms>')
-print('//lazy burstmode   (BLM/SCH: nuke only during magic burst)')
-print('//lazy freenuke    (BLM/SCH: tier IV and lower on the target, V/VI for burst)')
-print('//lazy chainmode   (fire the full ordered ws_sc_chain)')
-print('//lazy partychain  (continue any open skillchain with the best weaponskill)')
-print('//lazy openmode    (opener + closers only)')
-print('//lazy retrust')
-print('//lazy join <name>   (same as them telling you the phrase)')
-print('//lazy join cancel')
-print('//lazy sync <name>   (level sync to that party member)')
-print('//lazy sync off')
-print('//lazy ui   (show/hide the button panel; //lazy ui reset)')
+print('Domo commands:')
+print('//domo start')
+print('//domo stop')
+print('//domo reload')
+print('//domo save')
+print('//domo show')
+print('//domo debug on/off')
+print('//domo leader')
+print('//domo semiauto   (you pick targets, walk and engage; Domo fights once you are engaged)')
+print('//domo follower [player|<t>]   (no name: party leader, then whoever invited you, then your target)')
+print('//domo autotarget on/off')
+print('//domo target <name>')
+print('//domo fight')
+print('//domo buffs on/off')
+print('//domo cure on/off')
+print('//domo rest on/off')
+print('//domo range <yalms>')
+print('//domo burstmode   (BLM/SCH: nuke only during magic burst)')
+print('//domo freenuke    (BLM/SCH: tier IV and lower on the target, V/VI for burst)')
+print('//domo chainmode   (fire the full ordered ws_sc_chain)')
+print('//domo partychain  (continue any open skillchain with the best weaponskill)')
+print('//domo openmode    (opener + closers only)')
+print('//domo retrust')
+print('//domo join <name>   (same as them telling you the phrase)')
+print('//domo join cancel')
+print('//domo sync <name>   (level sync to that party member)')
+print('//domo sync off')
+print('//domo ui   (show/hide the button panel; //domo ui reset)')
 if Party_Command_Help then
 Party_Command_Help()
 end
@@ -394,12 +394,12 @@ local player = windower.ffxi.get_player()
 if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
 windower.add_to_chat(
 167,
-'[Lazy] You are dead. Stop being a floor decoration, then //lazy start again.'
+'[Domo] You are dead. Stop being a floor decoration, then //domo start again.'
 )
 return
 end
 if Start_Engine then return end
-windower.add_to_chat(2, '....Starting Lazy Helper....')
+windower.add_to_chat(2, '....Starting Domo Helper....')
 Set_Origin()
 -- RESET TARGETLOGIC STATE
 if Clear_Combat_Target then
@@ -437,18 +437,18 @@ rest_monitor_started = false
 -- DEFAULT MODE
 if settings.assist == '' and not settings.semi_auto and not settings.autotarget then
 settings.autotarget = true
-windower.add_to_chat(207, '[Lazy] No mode selected -- defaulting to leader.')
+windower.add_to_chat(207, '[Domo] No mode selected -- defaulting to leader.')
 end
 -- JOB / TRUST INITIALIZATION
 Update_Job_Profile()
 Start_Rest_Monitor()
 -- Defaults only help people who know they exist, so say what they are.
 if active_profile and active_profile.use_weaponskills then
-windower.add_to_chat(207, '[Lazy] WS mode: ' .. Get_WS_Mode_Text() .. '  (//lazy chainmode, //lazy openmode, //lazy partychain)')
+windower.add_to_chat(207, '[Domo] WS mode: ' .. Get_WS_Mode_Text() .. '  (//domo chainmode, //domo openmode, //domo partychain)')
 end
 local start_nuke_text = Get_Nuke_Mode_Text and Get_Nuke_Mode_Text()
 if start_nuke_text then
-windower.add_to_chat(207, '[Lazy] Nuke mode: ' .. start_nuke_text .. '  (//lazy burstmode, //lazy freenuke)')
+windower.add_to_chat(207, '[Domo] Nuke mode: ' .. start_nuke_text .. '  (//domo burstmode, //domo freenuke)')
 end
 Snapshot_Trusts()
 coroutine.schedule(Engine, 0)
@@ -468,20 +468,20 @@ end
 return
 end
 if command == 'stop' then
-windower.add_to_chat(2, '....Stopping Lazy Helper....')
+windower.add_to_chat(2, '....Stopping Domo Helper....')
 Start_Engine = false
 return
 end
 if command == 'reload' then
 -- Full addon reload (all files), not just config. Saves settings first,
 -- and restarts afterward only if the engine was running.
-windower.add_to_chat(2, '....Reloading Lazy....')
+windower.add_to_chat(2, '....Reloading Domo....')
 local player = windower.ffxi.get_player()
 if player then
 config.save(settings, player.name)
 end
-local restart = Start_Engine and '; wait 3; lazy start' or ''
-windower.send_command('wait 0.5; lua reload lazy' .. restart)
+local restart = Start_Engine and '; wait 3; Domo start' or ''
+windower.send_command('wait 0.5; lua reload Domo' .. restart)
 return
 end
 if command == 'save' then
@@ -515,7 +515,7 @@ if command == 'autotarget' then
 settings.autotarget = (args[2] == 'on')
 windower.add_to_chat(3, 'Autotarget: ' .. tostring(settings.autotarget))
 if settings.semi_auto and settings.autotarget then
-windower.add_to_chat(207, '[Lazy] Semi-Auto ignores autotarget. Use //lazy leader to hunt automatically.')
+windower.add_to_chat(207, '[Domo] Semi-Auto ignores autotarget. Use //domo leader to hunt automatically.')
 end
 return
 end
@@ -550,12 +550,12 @@ if command == 'debug' then
 local state = args[2]
 if state == 'on' then
 Debug.Set_Enabled(true)
-windower.add_to_chat(207, '[Lazy] Debug: ON')
+windower.add_to_chat(207, '[Domo] Debug: ON')
 elseif state == 'off' then
 Debug.Set_Enabled(false)
-windower.add_to_chat(207, '[Lazy] Debug: OFF')
+windower.add_to_chat(207, '[Domo] Debug: OFF')
 else
-windower.add_to_chat(207, '[Lazy] Debug is ' .. (Debug.enabled and 'ON' or 'OFF'))
+windower.add_to_chat(207, '[Domo] Debug is ' .. (Debug.enabled and 'ON' or 'OFF'))
 end
 return
 end
@@ -563,11 +563,11 @@ if command == 'leader' then
 settings.assist = ''
 settings.semi_auto = false
 settings.autotarget = true
-windower.add_to_chat(3, '[Lazy] Leader mode -- autotarget on, assist cleared.')
+windower.add_to_chat(3, '[Domo] Leader mode -- autotarget on, assist cleared.')
 return
 end
 -- SEMI-AUTO
--- You pick targets, walk and engage by hand. Once you are engaged Lazy runs
+-- You pick targets, walk and engage by hand. Once you are engaged Domo runs
 -- the same combat logic as Leader and Follower (see Logic/PlayMode.lua).
 if command == 'semiauto' then
 settings.semi_auto = true
@@ -589,7 +589,7 @@ end
 windower.ffxi.follow(0)
 windower.add_to_chat(
 3,
-'[Lazy] Semi-Auto mode -- you choose targets, move and engage; Lazy fights once you are engaged.'
+'[Domo] Semi-Auto mode -- you choose targets, move and engage; Domo fights once you are engaged.'
 )
 return
 end
@@ -617,22 +617,22 @@ if command == 'follower' then
 
         if not name then
             if how == 'self' then
-                windower.add_to_chat(167, '[Lazy] You are the party leader, so there is nobody to follow. Use //lazy leader.')
+                windower.add_to_chat(167, '[Domo] You are the party leader, so there is nobody to follow. Use //domo leader.')
             elseif target_only then
-                windower.add_to_chat(167, '[Lazy] Target a player first, then //lazy follower <t>.')
+                windower.add_to_chat(167, '[Domo] Target a player first, then //domo follower <t>.')
             else
                 windower.add_to_chat(
                     167,
-                    '[Lazy] Could not find anyone to follow: no party leader detected, ' ..
+                    '[Domo] Could not find anyone to follow: no party leader detected, ' ..
                     'nobody has invited you, and no player is targeted. ' ..
-                    'Target the leader and try again, or //lazy follower <name>.'
+                    'Target the leader and try again, or //domo follower <name>.'
                 )
             end
 
             return
         end
 
-        windower.add_to_chat(2, '[Lazy] Following ' .. name .. ' (' .. how .. ').')
+        windower.add_to_chat(2, '[Domo] Following ' .. name .. ' (' .. how .. ').')
     end
 
     settings.assist = name
@@ -657,7 +657,7 @@ if command == 'follower' then
 
     windower.add_to_chat(
         3,
-        '[Lazy] Follower mode -- assisting ' ..
+        '[Domo] Follower mode -- assisting ' ..
         name ..
         ', autotarget off.'
     )
@@ -674,25 +674,25 @@ if command == 'follower' then
 
     return
 end
--- Grabs whatever mob is on <t> and locks Lazy onto that exact name,
--- same as //lazy target but filled in from your current target.
+-- Grabs whatever mob is on <t> and locks Domo onto that exact name,
+-- same as //domo target but filled in from your current target.
 if command == 'fight' then
 local player = windower.ffxi.get_player()
 local current = windower.ffxi.get_mob_by_target('t')
 if not current or not current.valid_target or not current.hpp or current.hpp <= 0 then
-windower.add_to_chat(167, '[Lazy] No valid target selected -- target the mob you want first, then //lazy fight.')
+windower.add_to_chat(167, '[Domo] No valid target selected -- target the mob you want first, then //domo fight.')
 return
 end
 if player and current.id == player.id then
-windower.add_to_chat(167, "[Lazy] That's you. Target a monster first.")
+windower.add_to_chat(167, "[Domo] That's you. Target a monster first.")
 return
 end
 if Is_Party_Member(current.id) then
-windower.add_to_chat(167, "[Lazy] That's a party member/trust, not a monster.")
+windower.add_to_chat(167, "[Domo] That's a party member/trust, not a monster.")
 return
 end
 settings.target = current.name
-windower.add_to_chat(3, "[Lazy] Now locked onto '" .. current.name .. "' -- //lazy target (no name) clears it.")
+windower.add_to_chat(3, "[Domo] Now locked onto '" .. current.name .. "' -- //domo target (no name) clears it.")
 return
 end
 if command == 'rest' then
@@ -833,7 +833,7 @@ and player.vitals.mp >= (ability.mp_cost or 0)
 then
 windower.add_to_chat(
 167,
-'[Lazy] Emergency Waltz -- ' ..
+'[Domo] Emergency Waltz -- ' ..
 waltz .. ' (' .. player.vitals.hpp .. '% HP)'
 )
 Cast_Ability(waltz)
@@ -1327,7 +1327,7 @@ local target = (target_name == player.name) and '<me>' or target_name
 if failsafe then
 windower.add_to_chat(
 167,
-'[Lazy] Failsafe cure -- ' ..
+'[Domo] Failsafe cure -- ' ..
 target_name .. ' at ' .. worst_hpp .. '% HP, no healer response'
 )
 end

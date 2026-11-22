@@ -579,7 +579,7 @@ function Try_Free_Nuke()
 			nuke_unknown_warned[target.name] = true
 			windower.add_to_chat(
 				207,
-				"[Lazy] Free nuke: no weakness known for '" ..
+				"[Domo] Free nuke: no weakness known for '" ..
 				tostring(target.name) ..
 				"'. Add it to nuke_weakness (or set nuke_default) in settings.lua."
 			)
@@ -624,13 +624,13 @@ function Try_Free_Nuke()
 	isBusy = Action_Delay
 	return true
 end
--- Command handler: //lazy burstmode, //lazy freenuke, //lazy nukeoff
+-- Command handler: //domo burstmode, //domo freenuke, //domo nukeoff
 function Set_Nuke_Mode(mode)
 	if mode == 'off' then
 		nuke_mode = 'off'
 		windower.add_to_chat(
 			167,
-			'[Lazy] NUKES OFF. Automatic magic nuking disabled.'
+			'[Domo] NUKES OFF. Automatic magic nuking disabled.'
 		)
 		return
 	end
@@ -638,14 +638,14 @@ function Set_Nuke_Mode(mode)
 		if not (active_profile and active_profile.free_nuke) then
 			windower.add_to_chat(
 				167,
-				'[Lazy] Free nuke is not enabled for this job. Staying in burst mode.'
+				'[Domo] Free nuke is not enabled for this job. Staying in burst mode.'
 			)
 			return
 		end
 		nuke_mode = 'free'
 		windower.add_to_chat(
 			2,
-			'[Lazy] Nuke mode: FREE NUKE.'
+			'[Domo] Nuke mode: FREE NUKE.'
 		)
 		return
 	end
@@ -653,12 +653,12 @@ function Set_Nuke_Mode(mode)
 	if active_profile and active_profile.magic_burst then
 		windower.add_to_chat(
 			2,
-			'[Lazy] Nuke mode: BURST ONLY.'
+			'[Domo] Nuke mode: BURST ONLY.'
 		)
 	else
 		windower.add_to_chat(
 			167,
-			'[Lazy] Burst mode selected; this job has no magic burst enabled.'
+			'[Domo] Burst mode selected; this job has no magic burst enabled.'
 		)
 	end
 end
@@ -675,12 +675,12 @@ function Get_Nuke_Mode_Text()
 	return 'burst only'
 end
 
--- FINISHER (//lazy finisher): the target is almost dead, so just kill it.
+-- FINISHER (//domo finisher): the target is almost dead, so just kill it.
 -- Overkill is fine, a living mob is not.
 --   nukers (auto_engage = false with free_nuke): Tier IV at finisher_hp%,
 --     Tier III at finisher_hp_low%, using the mob's known weakness element.
 --   everyone else: the chain starter at finisher_tp, no waiting on TP cap.
--- Ignores skillchain/burst windows on purpose. Respects //lazy nukeoff.
+-- Ignores skillchain/burst windows on purpose. Respects //domo nukeoff.
 function Try_Finisher()
 	if finisher_enabled == false then
 		return false

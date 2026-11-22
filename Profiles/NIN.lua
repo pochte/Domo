@@ -1,6 +1,6 @@
 -- NIN JOB PROFILE
 -- Ninja -- Frontline melee, magic bursts during skillchains.
--- Loaded by Lazy.lua into JOB_PROFILES.NIN
+-- Loaded by Domo.lua into JOB_PROFILES.NIN
 JOB_PROFILES.NIN = {
 	auto_engage = true,
 	use_weaponskills = true,
@@ -26,8 +26,8 @@ JOB_PROFILES.NIN = {
 	ws_sc_closers = {
 		'Blade: Ten'
 	},
-	-- //lazy chainmode: Shun > Kamu > Shun, then the opener fires again once
-	-- the window ends, so it repeats. //lazy openmode uses the starter and
+	-- //domo chainmode: Shun > Kamu > Shun, then the opener fires again once
+	-- the window ends, so it repeats. //domo openmode uses the starter and
 	-- closers above instead.
 	ws_sc_chain = {
 		{ 'Blade: Shun', 1000 },

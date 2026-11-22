@@ -3,7 +3,7 @@
 --
 -- Fallback profile used for any job without a dedicated profile.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.DEFAULT 
+-- Loaded by Domo.lua into JOB_PROFILES.DEFAULT 
 
 JOB_PROFILES.DEFAULT = {
 

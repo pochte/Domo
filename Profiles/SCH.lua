@@ -43,7 +43,7 @@ JOB_PROFILES.SCH = {
 		{ max_missing = math.huge, spells = { 'Cure IV', 'Cure III' } },
 	},
 
-	-- FREE NUKE (//lazy freenuke)
+	-- FREE NUKE (//domo freenuke)
 	-- Tier IV and lower cast between bursts.
 	-- Tier V and VI saved for magic burst.
 	free_nuke = true,

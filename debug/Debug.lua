@@ -1,4 +1,4 @@
--- LAZY DEBUG :: Off by default
+-- Domo DEBUG :: Off by default
 Debug = Debug or {}
 Debug.enabled = Debug.enabled or false
 Debug._log_handle = Debug._log_handle or nil
@@ -13,7 +13,7 @@ function Debug.Open_Log()
     end
     local ok, file = pcall(io.open, DEBUG_FILE, 'a')
     if not ok or not file then
-        windower.add_to_chat(167, '[Lazy DEBUG] ERROR: Could not open TargetLogic_Debug.txt')
+        windower.add_to_chat(167, '[Domo DEBUG] ERROR: Could not open TargetLogic_Debug.txt')
         return false
     end
     Debug._log_handle = file
@@ -62,7 +62,7 @@ function Debug.Log(message)
             Debug.Close_Log()
         end
     end
-    windower.add_to_chat(207, '[Lazy DEBUG] ' .. message)
+    windower.add_to_chat(207, '[Domo DEBUG] ' .. message)
 end
 function Debug.Target(prefix, mob)
     if not Debug.enabled then
@@ -114,7 +114,7 @@ if not Debug._events_installed then
 end
 if not Debug._077_installed then
     -- Party permission / level sync packet. Logs the raw bytes so a sync
-    -- done from the menu can be compared with the one Lazy injects.
+    -- done from the menu can be compared with the one Domo injects.
     windower.register_event('outgoing chunk', function(id, data)
         if not Debug.enabled or id ~= 0x077 then
             return
@@ -136,19 +136,19 @@ if not Debug._attack_wrapper_installed then
             local player = windower.ffxi.get_player()
             local target = windower.ffxi.get_mob_by_target('t')
             if Debug.enabled then
-                Debug.Log(string.format('[Lazy ATTACK TRACE] /attack on | target=%s id=%s status=%s managed=%s locked=%s engage_sent=%s', tostring(target and target.name), tostring(target and target.id), tostring(player and player.status), tostring(managed_target_id), tostring(combat_locked_target_id), tostring(engage_sent_target_id)))
-                Debug.Log('[Lazy ATTACK TRACE] CALL STACK:\n' .. debug.traceback('ATTACK ON REQUEST', 2))
+                Debug.Log(string.format('[Domo ATTACK TRACE] /attack on | target=%s id=%s status=%s managed=%s locked=%s engage_sent=%s', tostring(target and target.name), tostring(target and target.id), tostring(player and player.status), tostring(managed_target_id), tostring(combat_locked_target_id), tostring(engage_sent_target_id)))
+                Debug.Log('[Domo ATTACK TRACE] CALL STACK:\n' .. debug.traceback('ATTACK ON REQUEST', 2))
             end
             if not combat_locked_target_id then
-                if Debug.enabled then Debug.Log('[Lazy ATTACK TRACE] BLOCKED /attack on -- NO COMBAT LOCK') end
+                if Debug.enabled then Debug.Log('[Domo ATTACK TRACE] BLOCKED /attack on -- NO COMBAT LOCK') end
                 return
             end
             if target and target.id and target.id ~= combat_locked_target_id then
-                if Debug.enabled then Debug.Log('[Lazy ATTACK TRACE] BLOCKED /attack on -- WRONG TARGET') end
+                if Debug.enabled then Debug.Log('[Domo ATTACK TRACE] BLOCKED /attack on -- WRONG TARGET') end
                 return
             end
             if player and player.status == 1 then
-                if Debug.enabled then Debug.Log('[Lazy ATTACK TRACE] BLOCKED /attack on -- ALREADY ENGAGED') end
+                if Debug.enabled then Debug.Log('[Domo ATTACK TRACE] BLOCKED /attack on -- ALREADY ENGAGED') end
                 return
             end
         end

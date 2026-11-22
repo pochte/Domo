@@ -4,8 +4,8 @@
 -- exclusion, combat lock, engage/retry, origin + pathing, follow,
 -- ranged pulls, Target_Monitor/Targeting/Follow_Monitor, incoming
 -- damage tracking, the aggro queue, and Engagement_Sync().
--- Lazy.lua only schedules the coroutines and reads last_damage_* for
--- Death_Monitor. All debug logic lives in Debug.lua (loaded by Lazy.lua
+-- Domo.lua only schedules the coroutines and reads last_damage_* for
+-- Death_Monitor. All debug logic lives in Debug.lua (loaded by Domo.lua
 -- before this file); nothing debug-related is defined here.
 --
 -- COMBAT: Once engaged (status == 1), keep the target lock until
@@ -117,7 +117,7 @@ end
 if (now - origin_unreachable_since) >= ORIGIN_UNREACHABLE_TIMEOUT then
 windower.add_to_chat(
 2,
-'[Lazy] Origin unreachable for ' ..
+'[Domo] Origin unreachable for ' ..
 ORIGIN_UNREACHABLE_TIMEOUT ..
 ' sec -- re-anchoring origin and retargeting.'
 )
@@ -127,7 +127,7 @@ end
 if not path_stuck_alerted then
 windower.add_to_chat(
 167,
-'[Lazy] Origin unreachable at current elevation -- stopping autopath. Will re-anchor here after ' ..
+'[Domo] Origin unreachable at current elevation -- stopping autopath. Will re-anchor here after ' ..
 ORIGIN_UNREACHABLE_TIMEOUT ..
 ' sec if still stuck.'
 )
@@ -154,7 +154,7 @@ windower.ffxi.run(false)
 if not path_stuck_alerted then
 windower.add_to_chat(
 167,
-'[Lazy] Stuck pathing to origin (no progress in ' ..
+'[Domo] Stuck pathing to origin (no progress in ' ..
 PATH_STUCK_TIMEOUT ..
 's) -- stopping autopath.'
 )
@@ -198,7 +198,7 @@ windower.register_event('incoming text', function(original)
 if not Start_Engine or not original then
 return
 end
-if string.find(original, '[Lazy DEBUG]', 1, true) then
+if string.find(original, '[Domo DEBUG]', 1, true) then
 return
 end
 if not string.find(
@@ -1030,7 +1030,7 @@ end
 coroutine.sleep(0.2)
 end
 end
--- DEBUFF-CASTER TARGET FALLBACK (moved from Lazy.lua; called by Buff_Tick)
+-- DEBUFF-CASTER TARGET FALLBACK (moved from Domo.lua; called by Buff_Tick)
 function Ensure_Debuff_Target()
 local player = windower.ffxi.get_player()
 if not player or not active_profile then
@@ -1080,8 +1080,8 @@ damage_watch_target_id = nil
 party_activity = {}
 last_self_hit_on_current_target = nil
 -- DAMAGE TAKEN / AGGRO QUEUE
--- Globals (not local): Lazy.lua's Death_Monitor reads last_damage_source
--- and last_damage_kind, and //lazy start calls Reset_Damage_Tracking().
+-- Globals (not local): Domo.lua's Death_Monitor reads last_damage_source
+-- and last_damage_kind, and //domo start calls Reset_Damage_Tracking().
 last_damage_source = nil
 last_damage_source_id = nil
 last_damage_kind = nil
@@ -1300,7 +1300,7 @@ local function Recover_Combat_Target(player, current_id)
 while #aggro_queue > 0 do
 local candidate = windower.ffxi.get_mob_by_id(table.remove(aggro_queue, 1))
 if Can_Switch_To(candidate, player) then
-if Handoff_Combat_Lock(candidate, '[Lazy] Finishing that off, now dealing with: ') then
+if Handoff_Combat_Lock(candidate, '[Domo] Finishing that off, now dealing with: ') then
 return true
 end
 end
@@ -1308,7 +1308,7 @@ end
 if last_damage_source_id and last_damage_source_id ~= current_id then
 local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
 if Can_Switch_To(attacker, player) then
-if Handoff_Combat_Lock(attacker, '[Lazy] Engaged target mismatch -- retargeting to ') then
+if Handoff_Combat_Lock(attacker, '[Domo] Engaged target mismatch -- retargeting to ') then
 return true
 end
 end
@@ -1371,7 +1371,7 @@ coroutine.sleep(ENGAGEMENT_SYNC_INTERVAL)
 end
 end
 -- FACING + COMBAT ROTATION
--- Moved here from Lazy.lua / JobLogic.lua so there is exactly one copy.
+-- Moved here from Domo.lua / JobLogic.lua so there is exactly one copy.
 -- engaged_since is global (Combat's stuck-target Provoke timer).
 engaged_since = nil
 provoke_last_try = 0
@@ -1397,7 +1397,7 @@ if math.abs(d) > math.rad(10) then
 windower.ffxi.turn(desired)
 end
 end
--- Per-tick combat rotation (called by Lazy.lua's Engine via pcall).
+-- Per-tick combat rotation (called by Domo.lua's Engine via pcall).
 function Combat()
 local player = windower.ffxi.get_player()
 if not player then return end

@@ -1,9 +1,9 @@
 -- PLAY MODE
--- How much of the hunt Lazy runs by itself:
+-- How much of the hunt Domo runs by itself:
 --   Leader     picks targets, walks to them and engages.
 --   Follower   assists someone else's target (settings.assist = their name).
 --   Semi-Auto  YOU pick targets, walk and engage by hand. Once you are
---              engaged Lazy runs the same combat logic as the other modes and
+--              engaged Domo runs the same combat logic as the other modes and
 --              may move to keep the fight going. Buffs, cures and the rest of
 --              the support logic always run.
 -- Job combat logic is shared by all three modes. Only three things differ,

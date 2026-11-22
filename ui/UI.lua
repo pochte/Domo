@@ -7,7 +7,7 @@
 --                 toggles, modes and targeting.
 --   Party Trusts  Party Trust Control: ask the party leader to summon or
 --                 dismiss any trust (anyone in the party may ask).
---   Settings      Lazy itself: skin, radius, show, debug, save, reload and
+--   Settings      Domo itself: skin, radius, show, debug, save, reload and
 --                 who may use party-chat commands.
 -- The "-" in the corner minimizes the panel to its title and status; the x
 -- hides it. Click the status ("STOPPED" / "RUNNING") to start or stop this
@@ -19,9 +19,9 @@
 -- you are not the leader; hover them to see why.
 -- Hover any button or tab for a description (a floating tooltip).
 --
---   //lazy ui                      show / hide the panel
---   //lazy ui reset                default spot, size and skin
---   //lazy ui skin ffxi|ffxiv      pick a skin from chat
+--   //domo ui                      show / hide the panel
+--   //domo ui reset                default spot, size and skin
+--   //domo ui skin ffxi|ffxiv      pick a skin from chat
 -- Drag it by grabbing it anywhere. Mouse wheel over it resizes it.
 -- Position, size, skin, tab, collapsed sections and shown/hidden are
 -- remembered in data/ui_pos.txt.
@@ -49,7 +49,7 @@ local TABS = { 'Controls', 'Party Trusts', 'Settings' }
 local TAB_TIPS = {
     'Everyday controls for this character and the party.',
     'Party Trust Control: ask the party leader to summon or dismiss trusts.',
-    'Lazy settings: skin, hunting radius, debug, save, reload and permissions.',
+    'Domo settings: skin, hunting radius, debug, save, reload and permissions.',
 }
 
 -- Frame pieces. FFXIV's pieces have soft edges, so they hang slightly
@@ -72,10 +72,10 @@ local FALLBACK_PHRASES = {
 
 -- HELPERS
 local function Run(cmdline)
-    windower.send_command('lazy ' .. cmdline)
+    windower.send_command('Domo ' .. cmdline)
 end
 
--- Reads a game/Lazy global without ever throwing.
+-- Reads a game/Domo global without ever throwing.
 local function Safe(fn)
     local ok, value = pcall(fn)
 
@@ -123,7 +123,7 @@ local function With_Target(what, fn)
         if name then
             fn(name)
         else
-            windower.add_to_chat(167, '[Lazy] Target a player first, then ' .. what .. '.')
+            windower.add_to_chat(167, '[Domo] Target a player first, then ' .. what .. '.')
         end
     end
 end
@@ -225,7 +225,7 @@ local function Advance_Cycle(c)
         end
     end
 
-    windower.add_to_chat(167, '[Lazy] No other option is available for that right now.')
+    windower.add_to_chat(167, '[Domo] No other option is available for that right now.')
 end
 
 local ROLE_CYCLE = Cycle_Button('Role', 'Click to change: Leader, Follower, or Semi-Auto.', {
@@ -262,7 +262,7 @@ local SKIN_CYCLE = Cycle_Button('Skin', 'Click to change the panel look: FFXI or
 
 -- BUTTONS
 -- party       = phrase key (PartyCommands.lua, so renamed phrases work)
--- cmd         = //lazy command run on this character
+-- cmd         = //domo command run on this character
 -- toggle/active = on/off command and how to read its state
 -- cycle       = see Cycle_Button
 -- run         = custom function
@@ -285,8 +285,8 @@ local SECTIONS = {
         tab = 1,
         title = 'PARTY: you and the party',
         buttons = {
-            { label = 'Start',   party = 'start',   tip = 'You and the party start Lazy.' },
-            { label = 'Stop',    party = 'stop',    tip = 'You and the party stop Lazy.' },
+            { label = 'Start',   party = 'start',   tip = 'You and the party start Domo.' },
+            { label = 'Stop',    party = 'stop',    tip = 'You and the party stop Domo.' },
             { label = 'Hold',    party = 'hold',    tip = 'Stop new pulls; current fights finish.' },
             { label = 'Resume',  party = 'resume',  tip = 'Carry on after a hold, with a new origin.' },
             { label = 'Regroup', party = 'regroup', tip = 'Everyone moves to the leader and holds.' },
@@ -294,7 +294,7 @@ local SECTIONS = {
             { label = 'Rebuff',  party = 'rebuff',  tip = 'Forget buff timers so buffs are recast.' },
             { label = 'Session Stats', party = 'tnl', tip = 'Print session statistics to chat.' },
             { label = 'Go Home', party = 'go_home', confirm = true,
-              tip = 'Warp out, stop Lazy and print stats. Click twice to confirm.' },
+              tip = 'Warp out, stop Domo and print stats. Click twice to confirm.' },
         },
     },
     {
@@ -342,7 +342,7 @@ local SECTIONS = {
     },
     {
         tab = 3,
-        title = 'SETTINGS: Lazy',
+        title = 'SETTINGS: Domo',
         buttons = {
             SKIN_CYCLE,
             { label = 'Radius -5', run = Bump_Radius(-5), tip = Radius_Tip(-5) },
@@ -350,7 +350,7 @@ local SECTIONS = {
             { label = 'Show Settings', cmd = 'show', tip = 'Print current settings and modes to chat.' },
             { label = 'Debug Log',  On_Off('debug', function() return Debug and Debug.enabled end), tip = 'Turn debug logging on or off.' },
             { label = 'Save Settings', cmd = 'save', tip = "Save this character's settings." },
-            { label = 'Reload Lazy',   cmd = 'reload', tip = 'Reload the addon; restarts if it was running.' },
+            { label = 'Reload Domo',   cmd = 'reload', tip = 'Reload the addon; restarts if it was running.' },
         },
     },
     {
@@ -362,6 +362,18 @@ local SECTIONS = {
               run = With_Target('Allow Target', function(name) Run('trust add ' .. name) end) },
             { label = 'Disallow Target', tip = 'Remove them; an empty list allows everyone.',
               run = With_Target('Disallow Target', function(name) Run('trust remove ' .. name) end) },
+        },
+    },
+    {
+        tab = 3,
+        title = 'PHRASE SETTING: invite command',
+        buttons = {
+            { label = 'Current Phrase', tip = 'Show the secret join phrase and how to change it.',
+              run = function()
+                  local p = (Get_Join_Phrase and Get_Join_Phrase()) or 'chicken nuggets'
+                  windower.add_to_chat(2, '[Domo] Current phrase: "' .. p .. '"')
+                  windower.add_to_chat(2, '[Domo] To change it, type: //domo setphrase New Phrase')
+              end },
         },
     },
 }
@@ -759,7 +771,7 @@ local function Layout()
     Band(O.track, cx, cy, STRIP_W * s, STRIP_H * s, PILL)
     Band(O.fill, cx, cy, (STRIP_W - 2) * s, (STRIP_H - 4) * s, FILL)
 
-    -- title row: LAZY, status, minimize (-), close (x)
+    -- title row: Domo, status, minimize (-), close (x)
     T.title:size(Font_Size(12))
     T.title:pos(pos.x + TITLE_X * s, pos.y + TITLE_Y * s)
     T.status:size(Font_Size(11))
@@ -1063,7 +1075,7 @@ local function Hide_Panel()
     Layout()
     Update_Tooltip()
     Save_Pos()
-    windower.add_to_chat(2, '[Lazy] Panel hidden. //lazy ui brings it back.')
+    windower.add_to_chat(2, '[Domo] Panel hidden. //domo ui brings it back.')
 end
 
 local function Press_Button(idx)
@@ -1074,7 +1086,7 @@ local function Press_Button(idx)
     end
 
     if Is_Gated(b) then
-        windower.add_to_chat(167, '[Lazy] That needs the party leader, and you are not the leader.'
+        windower.add_to_chat(167, '[Domo] That needs the party leader, and you are not the leader.'
             .. (b.trust and ' Use the Party Trusts tab to ask the leader.' or ''))
         return
     end
@@ -1214,7 +1226,7 @@ end)
 -- SET UP
 local function Create()
     if not windower.file_exists(ASSETS .. 'BarBG.png') then
-        windower.add_to_chat(167, '[Lazy] Button panel assets missing: expected ' .. ASSETS .. 'BarBG.png')
+        windower.add_to_chat(167, '[Domo] Button panel assets missing: expected ' .. ASSETS .. 'BarBG.png')
         return
     end
 
@@ -1253,7 +1265,7 @@ local function Create()
     O.track = Make_Image(ASSETS .. 'BarBG.png', 128, 64)
     O.fill = Make_Image(ASSETS .. 'Bar.png', 102, 64)
 
-    T.title = Make_Text('LAZY', 12)
+    T.title = Make_Text('Domo', 12)
     T.status = Make_Text('', 11, true)
     T.close = Make_Text('x', 12)
     T.close:color(190, 190, 200)
@@ -1356,12 +1368,12 @@ function UI_Command(command, args)
         for i, sk in ipairs(SKINS) do
             if sk.dir == want then
                 Apply_Skin(i)
-                windower.add_to_chat(2, '[Lazy] Panel skin: ' .. sk.name .. '.')
+                windower.add_to_chat(2, '[Domo] Panel skin: ' .. sk.name .. '.')
                 return true
             end
         end
 
-        windower.add_to_chat(167, '[Lazy] //lazy ui skin ffxi  or  //lazy ui skin ffxiv')
+        windower.add_to_chat(167, '[Domo] //domo ui skin ffxi  or  //domo ui skin ffxiv')
         return true
     end
 
@@ -1389,7 +1401,7 @@ function UI_Command(command, args)
     hover, hover_tab = nil, nil
     Layout()
     Save_Pos()
-    windower.add_to_chat(2, '[Lazy] Panel ' .. (shown and 'shown.' or 'hidden.'))
+    windower.add_to_chat(2, '[Domo] Panel ' .. (shown and 'shown.' or 'hidden.'))
 
     return true
 end

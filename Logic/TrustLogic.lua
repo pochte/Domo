@@ -103,7 +103,7 @@ function Snapshot_Trusts()
     if #tracked_trusts > 0 then
         windower.add_to_chat(
             2,
-            '[Lazy] Tracking trusts for resummon: ' ..
+            '[Domo] Tracking trusts for resummon: ' ..
             table.concat(tracked_trusts, ', ')
         )
     end
@@ -195,7 +195,7 @@ function Trust_Tick()
                 trust_resummon_last[name] = now
                 trust_recovery_casting = { name = name, spell_id = spell.id,sent_at = now, }
                 pending_cast = {store = trust_resummon_last,key = name, spell_id = spell.id, sent_at = now,}
-                windower.add_to_chat(2,'[Lazy] Resummoning trust: ' .. name)
+                windower.add_to_chat(2,'[Domo] Resummoning trust: ' .. name)
                 return
             end
         end
@@ -224,12 +224,12 @@ local function Send_Group_Change(name, change_kind)
     windower.packets.inject_outgoing(0x077, raw)
 end
 function Set_Level_Sync(name)
-    windower.add_to_chat(2, '[Lazy] Level sync -> ' .. tostring(name))
+    windower.add_to_chat(2, '[Domo] Level sync -> ' .. tostring(name))
     Send_Group_Change(name, GROUP_CHANGE_SET_LEVEL_SYNC)
 end
 function Clear_Level_Sync()
     local me = windower.ffxi.get_player()
-    windower.add_to_chat(2, '[Lazy] Level sync off (takes ~30s to uncap)')
+    windower.add_to_chat(2, '[Domo] Level sync off (takes ~30s to uncap)')
     Send_Group_Change(me and me.name or '', GROUP_CHANGE_DISABLE_LEVEL_SYNC)
 end
 local function Level_Sync_Buff_Id()
@@ -261,10 +261,10 @@ end
 --   trust dismiss <name>   everyone holds; the leader dismisses that trust
 --   trust summon <name>    the leader adds that trust and Trust_Tick summons it
 -- Only the party leader can summon or dismiss trusts in FFXI, so only the
--- leader's Lazy acts and talks. Everyone else just keeps its trust list in
+-- leader's Domo acts and talks. Everyone else just keeps its trust list in
 -- step so it never tries to resummon a trust that was let go on purpose.
 local function Trust_Say(msg)
-    windower.add_to_chat(2, '[Lazy] ' .. msg)
+    windower.add_to_chat(2, '[Domo] ' .. msg)
 end
 -- Leader's reply goes to party chat so whoever typed the command sees it.
 -- Never starts with a command phrase, so it can't trigger anything.
@@ -477,7 +477,7 @@ windower.register_event('incoming text', function(original)
         return
     end
     local spell = attempt.spell
-    -- Lazy's own resummon attempts hit the same message; those must not
+    -- Domo's own resummon attempts hit the same message; those must not
     -- turn into party chat.
     if trust_recovery_casting
         and trust_recovery_casting.spell_id == spell.id

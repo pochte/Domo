@@ -1,4 +1,4 @@
--- SMN LOGIC (loaded on SMN only, see Load_Profile_Logic in Lazy.lua)
+-- SMN LOGIC (loaded on SMN only, see Load_Profile_Logic in Domo.lua)
 -- Everything SMN-specific lives here: avatar rotation, wards, rage pacts,
 -- Avatar's Favor, Elemental Siphon. Gear is GearSwap's job, not ours.
 --
@@ -108,7 +108,7 @@ end
 local function Run_Siphon(player)
     local now = os.clock()
     if siphon_started and now - siphon_started > SIPHON_TIMEOUT then
-        windower.add_to_chat(207, '[Lazy][SMN] Elemental Siphon timed out, carrying on.')
+        windower.add_to_chat(207, '[Domo][SMN] Elemental Siphon timed out, carrying on.')
         siphon_started, spirit_seen_at = nil, nil
         siphon_retry_at = now + 60   -- don't instantly retry
         return false
@@ -117,7 +117,7 @@ local function Run_Siphon(player)
     if Is_Spirit(pet) then
         spirit_seen_at = spirit_seen_at or now
         if now - spirit_seen_at >= 3 and Can_Cast_Ability('Elemental Siphon') then
-            windower.add_to_chat(207, '[Lazy][SMN] Elemental Siphon (' .. string.format('%d', player.vitals.mpp) .. '% MP).')
+            windower.add_to_chat(207, '[Domo][SMN] Elemental Siphon (' .. string.format('%d', player.vitals.mpp) .. '% MP).')
             windower.send_command('input /ja "Elemental Siphon" <me>')
             isBusy = Action_Delay
             siphon_started, spirit_seen_at = nil, nil

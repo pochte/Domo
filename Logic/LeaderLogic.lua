@@ -1,12 +1,12 @@
 -- LEADER LOGIC
--- Works out who to follow for //lazy follower (and the Follower button).
+-- Works out who to follow for //domo follower (and the Follower button).
 -- No name given, it tries these in order:
 --   1. the party leader, as the game reports it
 --   2. the player who invited you (remembered when the invite arrives, so
---      Lazy has to be loaded by then)
+--      Domo has to be loaded by then)
 --   3. the player you currently have targeted
 --   4. otherwise it gives up with an error
--- //lazy follower <t> (or "t") skips straight to the target.
+-- //domo follower <t> (or "t") skips straight to the target.
 local PARTY_KEYS = { 'p0', 'p1', 'p2', 'p3', 'p4', 'p5' }
 local last_inviter = nil
 

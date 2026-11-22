@@ -105,7 +105,7 @@ local function Rest_Tick()
         then
             windower.add_to_chat(
                 167,
-                '[Lazy] Being hit by ' .. attacker.name .. ' -- engaging.'
+                '[Domo] Being hit by ' .. attacker.name .. ' -- engaging.'
             )
             Select_Target(attacker)
             return

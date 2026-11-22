@@ -1,4 +1,4 @@
--- Skillchain detection for Lazy
+-- Skillchain detection for Domo
 -- Logic ported from SkillChains by Ivaar
 require('actions')
 local skills = dofile(windower.addon_path .. 'skills.lua')
@@ -315,7 +315,7 @@ end
 --     etc.
 --
 -- This is used by the magic-burst logic
--- in lazy.lua. 
+-- in Domo.lua. 
 function sc_get_property(target_id)
     local reson =
         resonating[target_id]

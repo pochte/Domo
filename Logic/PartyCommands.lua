@@ -1,8 +1,8 @@
 -- PARTYCOMMANDS
--- Everything that lets other players (or you, via //lazy) manage the party:
+-- Everything that lets other players (or you, via //domo) manage the party:
 --   * "chicken nuggets": tell the bot the phrase and it pauses pulls, invites
 --     you, level-syncs the party and resummons trusts minus the slots you need.
---   * //lazy join <name> | cancel, //lazy sync <name> | off
+--   * //domo join <name> | cancel, //domo sync <name> | off
 -- Add new party commands in Party_Command() / Party_Command_Help() at the
 -- bottom. Shared trust helpers (Get_Living_Trusts, Has_Level_Sync,
 -- Request_Own_Status, Set_Level_Sync, Clear_Level_Sync, Get_Party_Member_Job)
@@ -13,20 +13,32 @@ local MAX_PARTY_SIZE = 6
 
 -- PARTY JOIN
 
+-- Private join phrase (loaded from data/trusted_players.txt).
+-- Falls back to settings.party_join.phrase, then "chicken nuggets".
+local private_join_phrase = nil
+
 local function Join_Config()
     local cfg = party_join or {}
+    local phrase = private_join_phrase
+        or (cfg.phrase and tostring(cfg.phrase))
+        or 'chicken nuggets'
 
     return {
         enabled = cfg.enabled ~= false,
-        phrase = string.lower(cfg.phrase or 'chicken nuggets'),
+        phrase = string.lower(phrase),
         invite_timeout = cfg.invite_timeout or 60,
         fight_timeout = cfg.fight_timeout or 120,
         level_sync = cfg.level_sync ~= false,
     }
 end
 
+-- For the UI / //domo phrase
+function Get_Join_Phrase()
+    return Join_Config().phrase
+end
+
 local function Say(msg)
-    windower.add_to_chat(2, '[Lazy] ' .. msg)
+    windower.add_to_chat(2, '[Domo] ' .. msg)
 end
 
 local function Tell(name, msg)
@@ -490,7 +502,7 @@ local function Party_Join_Run(name, run_id)
 
         if not Dismiss_Trusts_And_Wait(run_id, 10) then
             if not Join_Aborted(run_id) then
-                Say('Trusts didn’t dismiss cleanly. Leaving the join paused for safety. Use //lazy join cancel if needed.')
+                Say('Trusts didn’t dismiss cleanly. Leaving the join paused for safety. Use //domo join cancel if needed.')
             end
 
             return
@@ -549,7 +561,7 @@ end
 
 function Party_Join_Begin(name)
     if not Start_Engine then
-        Say('Start Lazy first (//lazy start).')
+        Say('Start Domo first (//domo start).')
         return false
     end
 
@@ -620,12 +632,12 @@ windower.register_event('chat message', function(message, sender, mode, gm)
     end
 
     if not Start_Engine then
-        Say('Got the phrase from ' .. sender .. ' but Lazy isn’t running (//lazy start).')
+        Say('Got the phrase from ' .. sender .. ' but Domo isn’t running (//domo start).')
         return
     end
 
     if party_join_active then
-        Say('Got the phrase from ' .. sender .. ' but a join is already running (//lazy join cancel).')
+        Say('Got the phrase from ' .. sender .. ' but a join is already running (//domo join cancel).')
         return
     end
 
@@ -653,11 +665,11 @@ end)
 --   plus, with a trust name after them: trust dismiss <name> | trust summon <name>
 -- Rename any of them in settings.lua -> party_commands.phrases.
 -- Who may use them: data/trusted_players.txt (empty = everyone). Manage
--- it with //lazy trust add/remove/list/clear <name>.
+-- it with //domo trust add/remove/list/clear <name>.
 -- Also automatic: rez (dead players), doom + debuff cleansing, session stats.
--- Test any phrase locally with  //lazy party <phrase>.
+-- Test any phrase locally with  //domo party <phrase>.
 
--- Globals read by TargetLogic.lua / Lazy.lua.
+-- Globals read by TargetLogic.lua / Domo.lua.
 party_hold = false              -- "hold": no new pulls until "resume"
 regroup_active = false          -- running to the leader
 go_home_active = false          -- warp in progress
@@ -721,12 +733,20 @@ local function Clear_Table(t)
     end
 end
 
--- TRUSTED SENDERS (private data/trusted_players.txt)
+-- TRUSTED SENDERS + JOIN PHRASE (private data/trusted_players.txt)
+--
+-- File format:
+--   # Domo private settings
+--   phrase: your secret words
+--
+--   # Trusted players (one name per line)
+--   PlayerOne
+--   PlayerTwo
 
 local TRUSTED_PLAYERS_PATH =
     windower.addon_path .. 'data/trusted_players.txt'
 
-local function Load_Trusted_Names()
+local function Load_Trusted_And_Phrase()
     local file = io.open(TRUSTED_PLAYERS_PATH, 'r')
 
     if not file then
@@ -734,13 +754,17 @@ local function Load_Trusted_Names()
 
         if not file then
             Say('Couldn’t create the trusted player list.')
-            return {}
+            return {}, nil
         end
 
         -- Migrate any existing trusted names from settings.xml.
         local old_names = settings and settings.trusted_players or ''
 
-        file:write('# Lazy trusted players - one name per line\n')
+        file:write('# Domo private settings\n')
+        file:write('# phrase: sets the secret join phrase (case-insensitive)\n')
+        file:write('phrase: chicken nuggets\n')
+        file:write('\n')
+        file:write('# Trusted players (one name per line)\n')
 
         if type(old_names) == 'string' then
             for name in old_names:gmatch('[^,%s]+') do
@@ -755,34 +779,43 @@ local function Load_Trusted_Names()
         file = io.open(TRUSTED_PLAYERS_PATH, 'r')
 
         if not file then
-            return {}
+            return {}, nil
         end
     end
 
     local names = {}
+    local phrase = nil
 
     for line in file:lines() do
-        local name = line:match('^%s*(.-)%s*$')
+        local trimmed = line:match('^%s*(.-)%s*$') or ''
 
-        if name ~= '' and not name:match('^#') then
-            names[#names + 1] = name
+        if trimmed ~= '' and not trimmed:match('^#') then
+            local p = trimmed:match('^[Pp][Hh][Rr][Aa][Ss][Ee]%s*:%s*(.+)$')
+
+            if p then
+                phrase = p:match('^%s*(.-)%s*$')
+            else
+                names[#names + 1] = trimmed
+            end
         end
     end
 
     file:close()
 
-    return names
+    return names, phrase
 end
 
-local trusted_players = Load_Trusted_Names()
+local trusted_players, loaded_phrase = Load_Trusted_And_Phrase()
+private_join_phrase = loaded_phrase
 
 local function Trusted_Names()
     return trusted_players
 end
 
--- Save a complete replacement list. The active list is only changed after
--- the file has been written and closed successfully.
-local function Save_Trusted(list)
+-- Save the trusted list + current phrase. The active data is only changed
+-- after the file has been written and closed successfully.
+local function Save_Trusted(list, phrase_override)
+    local phrase = phrase_override or private_join_phrase or 'chicken nuggets'
     local file = io.open(TRUSTED_PLAYERS_PATH, 'w')
 
     if not file then
@@ -791,7 +824,11 @@ local function Save_Trusted(list)
     end
 
     local ok, write_error = pcall(function()
-        assert(file:write('# Lazy trusted players - one name per line\n'))
+        assert(file:write('# Domo private settings\n'))
+        assert(file:write('# phrase: sets the secret join phrase (case-insensitive)\n'))
+        assert(file:write('phrase: ' .. tostring(phrase) .. '\n'))
+        assert(file:write('\n'))
+        assert(file:write('# Trusted players (one name per line)\n'))
 
         for _, name in ipairs(list) do
             assert(file:write(name .. '\n'))
@@ -813,6 +850,7 @@ local function Save_Trusted(list)
     end
 
     trusted_players = saved
+    private_join_phrase = phrase
 
     return true
 end
@@ -1223,7 +1261,7 @@ local function Rez_Tick(roster, me)
     Sync_Override()
 end
 
--- Death_Monitor (Lazy.lua) calls these.
+-- Death_Monitor (Domo.lua) calls these.
 function Party_Death_Begin()
     if Opt('rez_enabled', true) == false then
         return false
@@ -1464,7 +1502,7 @@ function Party_Print_Stats()
     local s = party_stats
 
     if not s.start then
-        Stats_Out('[Lazy] No session yet. //lazy start first.')
+        Stats_Out('[Domo] No session yet. //domo start first.')
         return
     end
 
@@ -1472,7 +1510,7 @@ function Party_Print_Stats()
     local per_hr = 3600 / elapsed
 
     Stats_Out(string.format(
-        '[Lazy] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s | exemplar points: %s',
+        '[Domo] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s | exemplar points: %s',
         Fmt_Duration(elapsed),
         s.kills,
         s.kills * per_hr,
@@ -1484,7 +1522,7 @@ function Party_Print_Stats()
 
     if s.cur and s.req and s.req > 0 then
         local remaining = s.req - s.cur
-        local line = '[Lazy] EXP to next level: ' .. Commas(remaining)
+        local line = '[Domo] EXP to next level: ' .. Commas(remaining)
 
         if s.exp > 0 then
             line = line .. ' (about ' ..
@@ -1732,7 +1770,7 @@ local function Party_Go_Home()
     windower.ffxi.follow(0)
     windower.ffxi.run(false)
 
-    -- Keep the rest of Lazy from starting casts while the item is used.
+    -- Keep the rest of Domo from starting casts while the item is used.
     coroutine.schedule(function()
         while go_home_active do
             isBusy = math.max(isBusy or 0, 3)
@@ -1769,7 +1807,7 @@ windower.register_event('zone change', function()
         go_home_zoned = true
         Start_Engine = false
 
-        windower.add_to_chat(2, '....Stopping Lazy Helper....')
+        windower.add_to_chat(2, '....Stopping Domo Helper....')
         Party_Print_Stats()
     end
 end)
@@ -1920,7 +1958,7 @@ PHRASE_HANDLERS.stop = function(sender)
 
     Say('Stopping (' .. sender .. ').')
 
-    windower.add_to_chat(2, '....Stopping Lazy Helper....')
+    windower.add_to_chat(2, '....Stopping Domo Helper....')
     Start_Engine = false
 
     windower.ffxi.follow(0)
@@ -1933,7 +1971,7 @@ PHRASE_HANDLERS.start = function(sender)
     end
 
     Say('Starting up (' .. sender .. ').')
-    windower.send_command('lazy start')
+    windower.send_command('Domo start')
 end
 
 PHRASE_HANDLERS.hold = function(sender)
@@ -2066,7 +2104,7 @@ local function Trust_Phrase_Match(text)
     return nil
 end
 
--- Dismiss puts every Lazy on hold (like "hold"); the party leader then does
+-- Dismiss puts every Domo on hold (like "hold"); the party leader then does
 -- the dismissing/summoning (TrustLogic.lua). Say "resume" afterwards.
 local function Run_Trust_Command(kind, arg, sender)
     if not Start_Engine then
@@ -2133,17 +2171,46 @@ windower.register_event('chat message', function(message, sender, mode, gm)
 end)
 
 -- COMMAND DISPATCH
--- Called by Lazy.lua's //lazy handler before its own commands. Return true
--- when the command was handled here. Add new //lazy commands below, and new
+-- Called by Domo.lua's //domo handler before its own commands. Return true
+-- when the command was handled here. Add new //domo commands below, and new
 -- party-chat phrases as PHRASE_HANDLERS.<name> (+ DEFAULT_PHRASES entry).
 function Party_Command(command, args, raw_args)
     if command == 'join' then
         if args[2] == 'cancel' then
             Party_Join_Cancel()
         elseif not raw_args[2] then
-            print('//lazy join <name>  |  //lazy join cancel')
+            print('//domo join <name>  |  //domo join cancel')
         else
             Party_Join_Begin(raw_args[2])
+        end
+
+        return true
+    end
+
+    -- Show or set the private join phrase (stored in data/trusted_players.txt).
+    if command == 'phrase' or command == 'setphrase' then
+        if command == 'phrase' and not raw_args[2] then
+            Say('Current phrase: "' .. Get_Join_Phrase() .. '"')
+            Say('To change it, type: //domo setphrase New Phrase')
+            return true
+        end
+
+        -- Everything after the command becomes the new phrase.
+        local new_phrase = table.concat(raw_args, ' ', 2)
+        new_phrase = (new_phrase or ''):match('^%s*(.-)%s*$') or ''
+
+        -- Strip optional surrounding quotes.
+        new_phrase = new_phrase:gsub('^["\'](.*)["\']$', '%1')
+        new_phrase = new_phrase:match('^%s*(.-)%s*$') or ''
+
+        if new_phrase == '' then
+            Say('Current phrase: "' .. Get_Join_Phrase() .. '"')
+            Say('To change it, type: //domo setphrase New Phrase')
+            return true
+        end
+
+        if Save_Trusted(Trusted_Names(), new_phrase) then
+            Say('Join phrase set to: "' .. Get_Join_Phrase() .. '"')
         end
 
         return true
@@ -2153,7 +2220,7 @@ function Party_Command(command, args, raw_args)
         if args[2] == 'off' then
             Clear_Level_Sync()
         elseif not raw_args[2] then
-            print('//lazy sync <name>  |  //lazy sync off')
+            print('//domo sync <name>  |  //domo sync off')
         else
             Set_Level_Sync(raw_args[2])
         end
@@ -2167,7 +2234,7 @@ function Party_Command(command, args, raw_args)
 
         if sub == 'add' or sub == 'remove' then
             if not raw_args[3] or raw_args[3] == '' then
-                print('//lazy trust add <name>  |  //lazy trust remove <name>')
+                print('//domo trust add <name>  |  //domo trust remove <name>')
                 return true
             end
 
@@ -2210,7 +2277,7 @@ function Party_Command(command, args, raw_args)
             end
 
         elseif sub ~= 'list' then
-            print('//lazy trust add <name>  |  remove <name>  |  list  |  clear')
+            print('//domo trust add <name>  |  remove <name>  |  list  |  clear')
             return true
         end
 
@@ -2244,7 +2311,7 @@ function Party_Command(command, args, raw_args)
             end
         end
 
-        print('//lazy party <reset|go home|stop|start|hold|resume|regroup|rebuff|tnl|trust dismiss <name>|trust summon <name>>')
+        print('//domo party <reset|go home|stop|start|hold|resume|regroup|rebuff|tnl|trust dismiss <name>|trust summon <name>>')
 
         return true
     end
@@ -2252,16 +2319,18 @@ function Party_Command(command, args, raw_args)
     return false
 end
 
--- Lines for //lazy help.
+-- Lines for //domo help.
 function Party_Command_Help()
-    print('//lazy join <name>   (same as them telling you the phrase)')
-    print('//lazy join cancel')
-    print('//lazy sync <name>   (level sync to that party member)')
-    print('//lazy sync off')
-    print('//lazy trust add <name>  |  remove <name>  |  list  |  clear')
+    print('//domo join <name>   (same as them telling you the phrase)')
+    print('//domo join cancel')
+    print('//domo phrase                 (show the current join phrase)')
+    print('//domo setphrase <words>      (set + save the private join phrase)')
+    print('//domo sync <name>   (level sync to that party member)')
+    print('//domo sync off')
+    print('//domo trust add <name>  |  remove <name>  |  list  |  clear')
     print('  (controls who may use party commands and request a join; empty = everyone)')
-    print('//lazy tnl   (session time, kills, EXP, EXP to next level)')
-    print('//lazy party <phrase>   (run a party command locally)')
+    print('//domo tnl   (session time, kills, EXP, EXP to next level)')
+    print('//domo party <phrase>   (run a party command locally)')
     print('Party chat: reset | go home | stop | start | hold | resume | regroup | rebuff | tnl')
     print('Party chat: trust dismiss <name> (holds everyone) | trust summon <name>')
 end

@@ -1,5 +1,5 @@
 -- DNC_LOGIC
--- Dancer rotation and ability logic for LazyJob.
+-- Dancer rotation and ability logic for DomoJob.
 dnc_flourish_pending = false
 dnc_opening_step = 1
 dnc_last_target_id = nil
@@ -55,7 +55,7 @@ local function Reset_DNC_Fight()
 end
 -- PRE-WEAPONSKILL FLOURISH
 --
--- Called by Lazy.lua before a weaponskill is executed.
+-- Called by Domo.lua before a weaponskill is executed.
 -- Returns true if an ability was queued.
 function Try_DNC_Pre_WS_Flourish()
     if buffactive['Climactic Flourish']
@@ -110,7 +110,7 @@ function Try_DNC_Actions()
                     >= (ability.mp_cost or 0) then
                 windower.add_to_chat(
                     167,
-                    '[Lazy] Emergency Waltz -- '
+                    '[Domo] Emergency Waltz -- '
                     .. waltz .. ' ('
                     .. player.vitals.hpp .. '% HP)'
                 )
@@ -140,7 +140,7 @@ function Try_DNC_Actions()
         and Can_Cast_Ability('Trance') then
         windower.add_to_chat(
             167,
-            '[Lazy] Debuffed 10s+ -- using Trance.'
+            '[Domo] Debuffed 10s+ -- using Trance.'
         )
         Cast_Ability('Trance')
         dnc_debuff_since = nil
