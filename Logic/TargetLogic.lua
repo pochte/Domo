@@ -79,6 +79,10 @@ tostring(origin_radius)
 return true
 end
 function Path_To_Origin()
+if Mode_May_Move and not Mode_May_Move() then
+-- Semi-Auto, not engaged: never walk the player anywhere.
+return
+end
 if party_follow_override then
 -- Regroup / rez walking owns movement; do not path home over it.
 return
@@ -815,6 +819,25 @@ if not mob or not mob.id then
 Debug.Log('ENGAGE FAILED - INVALID TARGET')
 return false
 end
+
+-- FOLLOWER HP GATE
+-- Followers must never engage a target until the leader has damaged it.
+if settings and settings.assist ~= ''
+    and (
+        type(mob.hpp) ~= 'number'
+        or mob.hpp <= 0
+        or mob.hpp > 99
+    )
+then
+    Debug.Target('FOLLOWER ENGAGE BLOCKED - TARGET ABOVE 99%', mob)
+    return false
+end
+
+-- SEMI-AUTO: the player engages by hand.
+if Mode_May_Engage and not Mode_May_Engage() then
+Debug.Log('ENGAGE SKIPPED - SEMI-AUTO')
+return false
+end
 -- NEVER engage a player-owned pet or Luopan.
 if Is_Player_Pet(mob) then
 Debug.Target('ENGAGE BLOCKED - PLAYER PET/LUPON', mob)
@@ -947,7 +970,9 @@ return MELEE_ENGAGE_RANGE
 end
 function Follow_Monitor()
 while Start_Engine do
-if party_follow_override then
+if Mode_May_Move and not Mode_May_Move() then
+-- SEMI-AUTO, not engaged: the player walks by hand. Do not touch follow.
+elseif party_follow_override then
 -- PartyCommands.lua (regroup / rez) owns movement right now. Do not
 -- stop or redirect its follow every tick.
 elseif combat_locked_target_id then
@@ -968,6 +993,10 @@ end
 else
 windower.ffxi.follow(0)
 end
+elseif settings.assist ~= '' and not managed_target_id then
+    -- Follower has not committed to a damaged target yet.
+    -- Do not follow the leader's untouched target.
+    windower.ffxi.follow(0)
 elseif Targeting_Paused() then
 -- Do not follow or approach a new target while recovering.
 windower.ffxi.follow(0)
@@ -1409,8 +1438,18 @@ windower.send_command('input /ja "Provoke" <t>')
 end
 TurnToTarget()
 end
--- Nearly dead target: just kill it (see Try_Finisher in magicburst.lua).
+
+-- FOLLOWER HP GATE
+-- This must run before EVERY offensive action, including finishers.
+if Follower_Hold_Fire and Follower_Hold_Fire(target) then return end
+
+-- Nearly dead target: just kill it.
 if Try_Finisher and Try_Finisher() then return end
+
+-- SEMI-AUTO (Semi_Auto_Hold_Fire in PlayMode.lua): the player starts every
+-- fight. Nothing offensive is opened on a mob that is not engaged and not
+-- already claimed by the party.
+if Semi_Auto_Hold_Fire and Semi_Auto_Hold_Fire(target) then return end
 local magic_burst_ok = active_profile and active_profile.magic_burst
 if magic_burst_ok and active_profile.magic_burst_requires_buff then
 magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff]
@@ -1593,6 +1632,17 @@ and last_enemy_target_id
 and not support_return_target_id
 then
 support_return_target_id = last_enemy_target_id
+end
+-- SEMI-AUTO: the player may switch to another enemy mid-fight; follow
+-- their choice instead of dragging them back to the old target.
+if Semi_Auto_Active and Semi_Auto_Active()
+and player and player.status == 1
+and combat_locked_target_id
+and target_is_enemy
+and target.id ~= combat_locked_target_id
+and not isCasting and (isBusy or 0) <= 0 and not pending_cast
+then
+Clear_Combat_Target()
 end
 -- COMBAT LOCK OWNS EVERYTHING
 if combat_locked_target_id then
@@ -1778,6 +1828,15 @@ Debug.Target('PLAYER ALREADY ENGAGED - LOCKING', target)
 Debug.State('EXISTING COMBAT LOCK')
 end
 windower.ffxi.follow(0)
+-- SEMI-AUTO
+-- The player picks targets, walks and engages by hand. Until they engage
+-- there is nothing to do here, and nothing may select, move or engage.
+-- (Once engaged, the branch above adopts the target.)
+elseif Semi_Auto_Active and Semi_Auto_Active() then
+pending_target_id = nil
+pending_target_time = 0
+managed_target_id = nil
+engage_sent_target_id = nil
 -- TRUST RECOVERY
 -- No active combat lock and not engaged: wait for TrustLogic.
 -- This check must precede pending targets, managed targets,
@@ -1788,38 +1847,71 @@ pending_target_time = 0
 windower.ffxi.follow(0)
 -- WAITING FOR TARGET SELECTION
 -- ASSIST MODE
-
 -- Follower mode always gets priority over stale managed targets
 -- and pending leader-mode selections.
 elseif settings.assist ~= '' then
-    windower.send_command('input /assist ' .. settings.assist)
+    local target
 
-    local target = windower.ffxi.get_mob_by_target('t')
-    Debug.Target('ASSIST TARGET', target)
+    -- Already committed: stay with this enemy.
+    if managed_target_id then
+        target = windower.ffxi.get_mob_by_id(managed_target_id)
 
-    if target
-        and not Is_Player_Pet(target)
-        and not Is_Party_Member(target.id)
-        and target.id ~= (windower.ffxi.get_player() or {}).id
-        and target.valid_target
-        and type(target.hpp) == 'number'
-        and target.hpp > 0
-        and target.hpp <= 99
-    then
-        -- The mob has actually been pulled and damaged.
-        managed_target_id = target.id
-        engage_sent_target_id = nil
-
-        if type(target.distance) == 'number'
-            and math.sqrt(target.distance) <= Stop_Range(target)
+        if not target
+            or not target.valid_target
+            or type(target.hpp) ~= 'number'
+            or target.hpp <= 0
+            or Is_Player_Pet(target)
+            or Is_Party_Member(target.id)
+            or target.id == player.id
         then
+            Debug.Target('FOLLOWER TARGET LOST - RELEASING', target)
+
+            managed_target_id = nil
+            engage_sent_target_id = nil
+            pending_target_id = nil
+            pending_target_time = 0
+            windower.ffxi.follow(0)
+            target = nil
+        end
+    else
+        -- No committed target: inspect the leader's current target.
+        windower.send_command('input /assist ' .. settings.assist)
+
+        target = windower.ffxi.get_mob_by_target('t')
+        Debug.Target('ASSIST TARGET', target)
+
+        local valid =
+            target
+            and target.id ~= player.id
+            and not Is_Player_Pet(target)
+            and not Is_Party_Member(target.id)
+            and target.valid_target
+            and type(target.hpp) == 'number'
+            and target.hpp > 0
+
+        if valid and target.hpp <= 99 then
+            managed_target_id = target.id
+            engage_sent_target_id = nil
+
+            Debug.Target('FOLLOWER COMMITTED TO LEADER TARGET', target)
+        else
+            -- Untouched target: wait without approaching or attacking.
+            windower.ffxi.follow(0)
+            target = nil
+        end
+    end
+
+    -- Only approach or engage the committed enemy.
+    if target and managed_target_id == target.id then
+        local distance = type(target.distance) == 'number'
+            and math.sqrt(target.distance)
+            or nil
+
+        if distance and distance <= Stop_Range(target) then
             Engage_Target(target)
         else
             windower.ffxi.follow(target.index)
         end
-    else
-        -- Wait for the party to damage the mob before joining.
-        windower.ffxi.follow(0)
     end
 
     if not lockon_done
@@ -1939,36 +2031,6 @@ windower.ffxi.follow(0)
 Engage_Target(target)
 end
 end
-end
--- ASSIST MODE
-elseif settings.assist ~= '' then
-windower.send_command('input /assist ' .. settings.assist)
-local target = windower.ffxi.get_mob_by_target('t')
-Debug.Target('ASSIST TARGET', target)
-if target
-and not Is_Player_Pet(target)
-and not Is_Party_Member(target.id)
-and target.id ~= (windower.ffxi.get_player() or {}).id
-and target.valid_target
-and type(target.hpp) == 'number'
-and target.hpp > 0
-then
-managed_target_id = target.id
-engage_sent_target_id = nil
-if type(target.distance) == 'number'
-and math.sqrt(target.distance) <= Stop_Range(target)
-then
-Engage_Target(target)
-else
-windower.ffxi.follow(target.index)
-end
-end
-if not lockon_done
-and active_profile
-and active_profile.auto_engage ~= false
-then
-windower.send_command('input /lockon')
-lockon_done = true
 end
 -- AUTOTARGET
 elseif settings.autotarget then

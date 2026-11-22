@@ -6,6 +6,7 @@
         <buffs_active>true</buffs_active>
         <cure_active>true</cure_active>
         <rest_active>true</rest_active>
+        <semi_auto>false</semi_auto>
         <spell>Sinker Drill</spell>
         <spell_active>false</spell_active>
         <target />
@@ -21,6 +22,6 @@
         <target>rank eft</target>
     </baelfire>
     <ullona>
-        <assist>zarvladx</assist>
+        <assist>Norrec</assist>
     </ullona>
 </settings>

@@ -1,3 +1,4 @@
+
 -- SCH JOB PROFILE
 -- Scholar magic bursts and backup healing when no WHM is present.
 
@@ -8,7 +9,29 @@ JOB_PROFILES.SCH = {
 
 	-- SUPPORT
 	haste_active = false,
-	self_buffs = {},
+	self_buffs = {
+		{ name = 'Protect V', interval = 30, ability = 'Accession' },
+		{ name = 'Shell V', interval = 30, ability = 'Accession' },
+		{ name = 'Stoneskin', interval = 5 },
+		{ name = 'Aquaveil', interval = 5 },
+		{ name = 'Blink', interval = 5 },
+		{ name = 'Klimaform', interval = 3 },
+		{ name = 'Sublimation', interval = 3 },
+	},
+
+	-- MODE-DEPENDENT WEATHER
+	-- Prefer Tier II, fall back to Tier I.
+	weather_buffs = {
+		cure_bot = {
+			'Aurorastorm II',
+			'Aurorastorm',
+		},
+		nuke = {
+			'Windstorm II',
+			'Windstorm',
+		},
+	},
+
 	magic_burst = true,
 	cure_bot_if_no_whm = true,
 
@@ -20,11 +43,12 @@ JOB_PROFILES.SCH = {
 		{ max_missing = math.huge, spells = { 'Cure IV', 'Cure III' } },
 	},
 
-	-- FREE NUKE (//lazy freenuke). Tier IV and lower are cast on the target
-	-- between bursts; V and VI are saved for magic burst.
+	-- FREE NUKE (//lazy freenuke)
+	-- Tier IV and lower cast between bursts.
+	-- Tier V and VI saved for magic burst.
 	free_nuke = true,
 	free_nuke_max_tier = 4,
-	free_nuke_weather = true, -- failsafe: cast the matching Storm if the weather is wrong
+	free_nuke_weather = true,
 
 	-- MAGIC BURST
 	burst_spells = {

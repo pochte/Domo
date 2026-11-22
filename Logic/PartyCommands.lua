@@ -258,7 +258,7 @@ end
 local function Party_Join_Run(name, run_id)
     local cfg = Join_Config()
 
-    Say('Party join for ' .. name .. ': no new pulls until they are in.')
+    Say('Got it — pausing pulls until ' .. name .. ' is in.')
 
     -- 1. Let a fight in progress finish. "Engaged" only counts while <t> is
     -- a live monster: with trusts out the character can sit engaged on
@@ -286,7 +286,7 @@ local function Party_Join_Run(name, run_id)
             idle_checks = idle_checks + 1
 
             if idle_checks >= 4 then
-                Say('Engaged with nothing to fight, disengaging.')
+                Say('Still locked on nothing, dropping combat.')
                 windower.send_command('input /attack off')
 
                 if Clear_Combat_Target then
@@ -300,14 +300,14 @@ local function Party_Join_Run(name, run_id)
         local now = os.clock()
 
         if now - started > cfg.fight_timeout then
-            Say('Fight is taking too long, carrying on anyway.')
+            Say('This fight is dragging, moving on.')
             break
         end
 
         if now - last_report >= 20 then
             last_report = now
 
-            Say('Waiting for the fight to finish' ..
+            Say('Still waiting on the current fight' ..
                 (t and t.name and (' (' .. t.name .. ')') or '') .. '...')
         end
 
@@ -324,26 +324,26 @@ local function Party_Join_Run(name, run_id)
     -- until the invite timeout without ever reaching trust cleanup.
     if not Find_Party_Member(name) and Count_Party_Members() >= MAX_PARTY_SIZE then
         if Count_Trusts_In_Party() > 0 then
-            Say('Party is full. Dismissing trusts to make room for ' .. name .. '.')
+            Say('Party’s full — dismissing trusts to make room for ' .. name .. '.')
 
             if not Dismiss_Trusts_And_Wait(run_id, 10) then
                 if not Join_Aborted(run_id) then
-                    Say('Could not dismiss trusts; cancelling party join instead of waiting on an invite.')
-                    Tell(name, 'I could not dismiss my trusts to make room. Please try again shortly.')
+                    Say('Couldn’t dismiss trusts. Cancelling the join.')
+                    Tell(name, 'Couldn’t clear a spot for you. Try again in a bit.')
                 end
 
                 return
             end
         else
-            Say('Party is full of players; cannot make room for ' .. name .. '.')
-            Tell(name, 'The party is full and has no trusts to dismiss. Please try again when a slot is free.')
+            Say('Party is full of players — no room for ' .. name .. '.')
+            Tell(name, 'Party is full and there are no trusts to dismiss. Try again when a spot opens.')
             return
         end
     end
 
     -- Invite and wait for them to accept.
     if not Find_Party_Member(name) then
-        Tell(name, 'Sending the invite now, please accept it.')
+        Tell(name, 'Invite sent — accept when you’re ready.')
         windower.send_command('input /pcmd add ' .. name)
     end
 
@@ -356,8 +356,8 @@ local function Party_Join_Run(name, run_id)
         end
 
         if waited >= cfg.invite_timeout then
-            Say(name .. ' never accepted the invite. Back to botting.')
-            Tell(name, 'The invite timed out. Tell me again when you are ready.')
+            Say(name .. ' never took the invite. Back to grinding.')
+            Tell(name, 'Invite timed out. Just say the phrase again when you’re ready.')
             return
         end
 
@@ -370,7 +370,7 @@ local function Party_Join_Run(name, run_id)
         waited = waited + 1
     end
 
-    Say(name .. ' joined the party.')
+    Say(name .. ' is in.')
 
     -- Save the new party member immediately. Party_Tick is paused while
     -- this join routine owns the party, so do not wait for the monitor.
@@ -398,7 +398,7 @@ local function Party_Join_Run(name, run_id)
     -- 4. Level sync to the lowest level / master level.
     if cfg.level_sync then
         if Has_Level_Sync() then
-            Say('A level sync is already active, leaving it alone.')
+            Say('Level sync is already up, leaving it alone.')
         else
             if my_master_level == nil then
                 Request_Own_Status()
@@ -415,16 +415,15 @@ local function Party_Join_Run(name, run_id)
             local target, need, why, target_ml = Pick_Sync_Target()
 
             if not target then
-                Say('No level sync: ' .. tostring(why) .. '.')
+                Say('Skipping level sync: ' .. tostring(why) .. '.')
             elseif not need then
-                Say('No level sync needed: ' .. target.name .. ' ML' ..
-                    tostring(target_ml) .. ' is the lowest and nobody counted is higher.')
+                Say('No sync needed — ' .. target.name .. ' (ML' .. tostring(target_ml) .. ') is already the lowest.')
             else
                 if Count_Trusts_In_Party() > 0 then
-                    Say('Dismissing trusts before the level sync.')
+                    Say('Dismissing trusts before level sync.')
 
                     if not Dismiss_Trusts_And_Wait(run_id, 10) then
-                        Say('Could not dismiss trusts first; trying the level sync anyway.')
+                        Say('Couldn’t fully dismiss trusts, trying the sync anyway.')
                     end
                 end
 
@@ -446,9 +445,9 @@ local function Party_Join_Run(name, run_id)
                 end
 
                 if synced then
-                    Say('Level sync active.')
+                    Say('Level sync is up.')
                 else
-                    Say('Level sync did not take. Do it from the party menu, I will wait up to 45s.')
+                    Say('Level sync didn’t take. Do it manually from the party menu — I’ll wait up to 45s.')
 
                     for _ = 1, 45 do
                         if Join_Aborted(run_id) or Has_Level_Sync() then
@@ -479,7 +478,7 @@ local function Party_Join_Run(name, run_id)
     local keep, dropped = Choose_Trusts_To_Keep(roster, joiner_job, cut)
 
     if #dropped > 0 then
-        Say('Not resummoning: ' .. table.concat(dropped, ', '))
+        Say('Not bringing back: ' .. table.concat(dropped, ', '))
     end
 
     -- If a trust has to go and some are still out, dismiss them all so the
@@ -487,11 +486,11 @@ local function Party_Join_Run(name, run_id)
     -- full-party invite already dismiss them; with nothing to drop and no
     -- sync the trusts that are out are simply left alone.)
     if #dropped > 0 and Count_Trusts_In_Party() > 0 then
-        Say('Dismissing trusts before resummoning the selected roster.')
+        Say('Dismissing trusts before bringing the selected ones back.')
 
         if not Dismiss_Trusts_And_Wait(run_id, 10) then
             if not Join_Aborted(run_id) then
-                Say('Trust dismissal did not complete; leaving the join paused for safety. Use //lazy join cancel if needed.')
+                Say('Trusts didn’t dismiss cleanly. Leaving the join paused for safety. Use //lazy join cancel if needed.')
             end
 
             return
@@ -504,7 +503,7 @@ local function Party_Join_Run(name, run_id)
     party_join_resummon_ok = true
 
     if #keep > 0 then
-        Say('Resummoning: ' .. table.concat(keep, ', '))
+        Say('Bringing back: ' .. table.concat(keep, ', '))
 
         local deadline = os.clock() + 150
 
@@ -527,8 +526,8 @@ local function Party_Join_Run(name, run_id)
         end
     end
 
-    Tell(name, 'You are in! Back to botting.')
-    Say('Party join finished.')
+    Tell(name, 'You’re in. Back to it.')
+    Say('Party join done.')
 end
 
 local function Party_Join_Reset()
@@ -538,7 +537,7 @@ end
 
 function Party_Join_Cancel()
     if not party_join_active then
-        Say('No party join in progress.')
+        Say('No party join running.')
         return
     end
 
@@ -555,7 +554,7 @@ function Party_Join_Begin(name)
     end
 
     if party_join_active then
-        Say('A party join is already in progress.')
+        Say('A party join is already running.')
         return false
     end
 
@@ -584,7 +583,7 @@ function Party_Join_Begin(name)
         coroutine.sleep(600)
 
         if run_id == party_join_run_id and party_join_active then
-            Say('Party join watchdog fired, resuming.')
+            Say('Party join timed out, resuming.')
             Party_Join_Reset()
         end
     end, 0)
@@ -621,12 +620,12 @@ windower.register_event('chat message', function(message, sender, mode, gm)
     end
 
     if not Start_Engine then
-        Say('Got the party phrase from ' .. sender .. ' but Lazy is not started (//lazy start).')
+        Say('Got the phrase from ' .. sender .. ' but Lazy isn’t running (//lazy start).')
         return
     end
 
     if party_join_active then
-        Say('Got the party phrase from ' .. sender .. ' but a party join is already running (//lazy join cancel).')
+        Say('Got the phrase from ' .. sender .. ' but a join is already running (//lazy join cancel).')
         return
     end
 
@@ -639,7 +638,7 @@ windower.register_event('chat message', function(message, sender, mode, gm)
 
     -- Players who have left must already be on the saved trusted list.
     if not Party_Is_Trusted(sender) then
-        Say('Ignored the party phrase from ' .. sender .. ' (not on the trusted list).')
+        Say('Ignored phrase from ' .. sender .. ' (not on the trusted list).')
         return
     end
 
@@ -651,6 +650,7 @@ end)
 -- ===========================================================================
 -- Party-chat phrases (exact match on the WHOLE line, like "chicken nuggets"):
 --   reset | go home | stop | start | hold | resume | regroup | rebuff | tnl
+--   plus, with a trust name after them: trust dismiss <name> | trust summon <name>
 -- Rename any of them in settings.lua -> party_commands.phrases.
 -- Who may use them: data/trusted_players.txt (empty = everyone). Manage
 -- it with //lazy trust add/remove/list/clear <name>.
@@ -670,6 +670,7 @@ local DEFAULT_PHRASES = {
     reset = 'reset', go_home = 'go home', stop = 'stop', start = 'start',
     hold = 'hold', resume = 'resume', regroup = 'regroup', rebuff = 'rebuff',
     tnl = 'tnl', rezzing = 'rezzing',
+    trust_dismiss = 'trust dismiss', trust_summon = 'trust summon',
 }
 
 local DEFAULT_WARP_ITEMS = {
@@ -695,6 +696,12 @@ end
 local function Phrase(name)
     local p = (party_commands or {}).phrases
     return string.lower((p and p[name]) or DEFAULT_PHRASES[name])
+end
+
+-- The phrase text for a command key (reset, go_home, hold...); UI.lua uses it
+-- so a phrase renamed in settings.lua is what the buttons send.
+function Party_Phrase_Text(name)
+    return Phrase(name)
 end
 
 local function Normalize(message)
@@ -726,7 +733,7 @@ local function Load_Trusted_Names()
         file = io.open(TRUSTED_PLAYERS_PATH, 'w')
 
         if not file then
-            Say('ERROR: Could not create trusted player list.')
+            Say('Couldn’t create the trusted player list.')
             return {}
         end
 
@@ -743,7 +750,7 @@ local function Load_Trusted_Names()
 
         file:close()
 
-        Say('New Trusted Player List created')
+        Say('Created a new trusted player list.')
 
         file = io.open(TRUSTED_PLAYERS_PATH, 'r')
 
@@ -779,7 +786,7 @@ local function Save_Trusted(list)
     local file = io.open(TRUSTED_PLAYERS_PATH, 'w')
 
     if not file then
-        Say('ERROR: Could not save trusted player list.')
+        Say('Couldn’t save the trusted player list.')
         return false
     end
 
@@ -794,7 +801,7 @@ local function Save_Trusted(list)
     local close_ok, close_error = file:close()
 
     if not ok or not close_ok then
-        Say('ERROR: Could not save trusted player list: ' ..
+        Say('Couldn’t save the trusted player list: ' ..
             tostring(write_error or close_error or 'file write failed'))
         return false
     end
@@ -857,7 +864,7 @@ function Party_Add_Trusted_Player(name)
         return false
     end
 
-    Say('Added ' .. name .. ' to the trusted players list.')
+    Say('Added ' .. name .. ' to the trusted list.')
 
     return true
 end
@@ -1176,7 +1183,10 @@ local function Rez_Tick(roster, me)
             end)
 
             for _, v in ipairs(dead) do
-                if v.mob and v.dist and (now - rez_first_seen[v.name]) >= delay then
+                -- Semi-Auto does not walk to the body; only rez what is already in range.
+                if v.mob and v.dist and (now - rez_first_seen[v.name]) >= delay
+                    and (v.dist <= RAISE_RANGE or not Mode_May_Move or Mode_May_Move())
+                then
                     rez_started_at[v.name] = rez_started_at[v.name] or now
 
                     if (now - rez_started_at[v.name]) <= Opt('rez_give_up', 90) then
@@ -1391,7 +1401,7 @@ local function Doom_Self_Tick(me)
 
     if not doom_announced then
         doom_announced = true
-        Chat('Doomed! Cursna please.')
+        Chat('Doomed — Cursna please!')
     end
 
     if Opt('doom_holy_water', true)
@@ -1624,7 +1634,7 @@ local function Warp_Via(spec)
     end
 
     if BAG_ID[bag] then
-        Say('Moving ' .. spec.name .. ' to inventory.')
+        Say('Moving ' .. spec.name .. ' to inventory...')
 
         pcall(function()
             packets.inject(packets.new('outgoing', 0x029, {
@@ -1704,14 +1714,14 @@ local function Party_Go_Home()
     end
 
     if me.vitals and me.vitals.hp <= 0 then
-        Say('Dead, cannot go home.')
+        Say('Can’t warp while dead.')
         return
     end
 
     go_home_active = true
     go_home_zoned = false
 
-    Say('Going home...')
+    Say('Warping home...')
 
     windower.send_command('input /attack off')
 
@@ -1747,7 +1757,7 @@ local function Party_Go_Home()
     go_home_active = false
     Start_Engine = false
 
-    print('go home command executed, no way home. Character has been logged out.')
+    print('No warp item available. Logging out.')
     windower.send_command('input /logout')
 end
 
@@ -1885,7 +1895,7 @@ PHRASE_HANDLERS.reset = function(sender)
         return
     end
 
-    Say('Reset requested by ' .. sender .. ': re-anchoring the origin here.')
+    Say('Reset from ' .. sender .. ' — re-anchoring origin here.')
 
     windower.ffxi.run(false)
     windower.ffxi.follow(0)
@@ -1899,7 +1909,7 @@ PHRASE_HANDLERS.go_home = function(sender)
         return
     end
 
-    Say('Go home requested by ' .. sender .. '.')
+    Say('Heading home (' .. sender .. ' asked).')
     coroutine.schedule(Party_Go_Home, 0)
 end
 
@@ -1908,7 +1918,7 @@ PHRASE_HANDLERS.stop = function(sender)
         return
     end
 
-    Say('Stop requested by ' .. sender .. '.')
+    Say('Stopping (' .. sender .. ').')
 
     windower.add_to_chat(2, '....Stopping Lazy Helper....')
     Start_Engine = false
@@ -1922,7 +1932,7 @@ PHRASE_HANDLERS.start = function(sender)
         return
     end
 
-    Say('Start requested by ' .. sender .. '.')
+    Say('Starting up (' .. sender .. ').')
     windower.send_command('lazy start')
 end
 
@@ -1933,7 +1943,7 @@ PHRASE_HANDLERS.hold = function(sender)
 
     party_hold = true
 
-    Say('Holding (' .. sender .. '): no new pulls. Say "' .. Phrase('resume') .. '" to continue.')
+    Say('Holding for ' .. sender .. ' — no new pulls until someone says resume.')
 end
 
 PHRASE_HANDLERS.resume = function(sender)
@@ -1948,7 +1958,7 @@ PHRASE_HANDLERS.resume = function(sender)
 
     Sync_Override()
 
-    Say('Resuming (' .. sender .. '): new origin set here.')
+    Say('Resuming — origin set here.')
 
     windower.ffxi.follow(0)
     Set_Origin()
@@ -1956,6 +1966,12 @@ end
 
 PHRASE_HANDLERS.regroup = function(sender)
     if not Start_Engine then
+        return
+    end
+
+    -- Semi-Auto never walks the player: just say what to do.
+    if Semi_Auto_Active and Semi_Auto_Active() then
+        Say('Go join everyone else. (' .. sender .. ' called a regroup; Semi-Auto won’t move you.)')
         return
     end
 
@@ -1970,7 +1986,7 @@ PHRASE_HANDLERS.regroup = function(sender)
     party_hold = true
 
     if leader_id == me.id then
-        Say('Leader holding here (' .. sender .. '). Say "' .. Phrase('resume') .. '" to continue.')
+        Say('I’m the leader — holding here. Say resume when ready.')
         return
     end
 
@@ -1983,7 +1999,7 @@ PHRASE_HANDLERS.regroup = function(sender)
 
     Sync_Override()
 
-    Say('Regrouping on the leader (' .. sender .. '). Say "' .. Phrase('resume') .. '" to continue.')
+    Say('Regrouping on the leader (' .. sender .. ').')
 
     coroutine.schedule(function()
         local deadline = os.clock() + Opt('regroup_timeout', 45)
@@ -2032,6 +2048,41 @@ PHRASE_HANDLERS.tnl = function()
     Party_Tnl()
 end
 
+-- "trust dismiss <name>" / "trust summon <name>": the phrase plus a trust name.
+-- Returns 'dismiss' or 'summon' and the name, or nil.
+local function Trust_Phrase_Match(text)
+    for _, kind in ipairs({ 'dismiss', 'summon' }) do
+        local p = Phrase('trust_' .. kind)
+
+        if text:sub(1, #p + 1) == p .. ' ' then
+            local arg = text:sub(#p + 2):match('^%s*(.-)%s*$')
+
+            if arg ~= '' then
+                return kind, arg
+            end
+        end
+    end
+
+    return nil
+end
+
+-- Dismiss puts every Lazy on hold (like "hold"); the party leader then does
+-- the dismissing/summoning (TrustLogic.lua). Say "resume" afterwards.
+local function Run_Trust_Command(kind, arg, sender)
+    if not Start_Engine then
+        return
+    end
+
+    if kind == 'dismiss' then
+        party_hold = true
+
+        Say('Holding for trust change (' .. sender .. '). Say resume when ready.')
+        Trust_Dismiss(arg)
+    else
+        Trust_Summon(arg)
+    end
+end
+
 windower.register_event('chat message', function(message, sender, mode, gm)
     if mode ~= 4 or not message or not sender then
         return
@@ -2056,10 +2107,22 @@ windower.register_event('chat message', function(message, sender, mode, gm)
         return
     end
 
+    local trust_kind, trust_arg = Trust_Phrase_Match(text)
+
+    if trust_kind then
+        if not is_self and not Party_Is_Trusted(sender) then
+            Say('Ignored "' .. text .. '" from ' .. sender .. ' (not trusted).')
+            return
+        end
+
+        Run_Trust_Command(trust_kind, trust_arg, sender)
+        return
+    end
+
     for name, handler in pairs(PHRASE_HANDLERS) do
         if text == Phrase(name) then
             if not is_self and not Party_Is_Trusted(sender) then
-                Say('Ignored "' .. text .. '" from ' .. sender .. ' (not on the trusted list).')
+                Say('Ignored "' .. text .. '" from ' .. sender .. ' (not trusted).')
                 return
             end
 
@@ -2132,18 +2195,18 @@ function Party_Command(command, args, raw_args)
                 list = Trusted_Names()
 
                 if sub == 'add' then
-                    Say('Trusted player added: ' .. raw_args[3] .. '.')
+                    Say('Added ' .. raw_args[3] .. ' to the trusted list.')
                 elseif found then
-                    Say('Trusted player removed: ' .. raw_args[3] .. '.')
+                    Say('Removed ' .. raw_args[3] .. ' from the trusted list.')
                 else
-                    Say(raw_args[3] .. ' was not on the trusted list.')
+                    Say(raw_args[3] .. ' wasn’t on the trusted list.')
                 end
             end
 
         elseif sub == 'clear' then
             if Save_Trusted({}) then
                 list = Trusted_Names()
-                Say('Trusted player list cleared.')
+                Say('Trusted list cleared.')
             end
 
         elseif sub ~= 'list' then
@@ -2167,6 +2230,12 @@ function Party_Command(command, args, raw_args)
 
     if command == 'party' then
         local phrase = Normalize(table.concat(raw_args, ' ', 2))
+        local trust_kind, trust_arg = Trust_Phrase_Match(phrase)
+
+        if trust_kind then
+            Run_Trust_Command(trust_kind, trust_arg, 'console')
+            return true
+        end
 
         for name, handler in pairs(PHRASE_HANDLERS) do
             if phrase == Phrase(name) or phrase == (name:gsub('_', ' ')) then
@@ -2175,7 +2244,7 @@ function Party_Command(command, args, raw_args)
             end
         end
 
-        print('//lazy party <reset|go home|stop|start|hold|resume|regroup|rebuff|tnl>')
+        print('//lazy party <reset|go home|stop|start|hold|resume|regroup|rebuff|tnl|trust dismiss <name>|trust summon <name>>')
 
         return true
     end
@@ -2194,4 +2263,5 @@ function Party_Command_Help()
     print('//lazy tnl   (session time, kills, EXP, EXP to next level)')
     print('//lazy party <phrase>   (run a party command locally)')
     print('Party chat: reset | go home | stop | start | hold | resume | regroup | rebuff | tnl')
+    print('Party chat: trust dismiss <name> (holds everyone) | trust summon <name>')
 end

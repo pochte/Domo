@@ -68,6 +68,7 @@ All commands use `//lazy`.
 | `debug on\|off` | Toggle debug logging |
 | `leader` | Enable leader mode and automatic targeting |
 | `follower [name]` | Assist a player, or the party leader if omitted |
+| `semiauto` | Semi-Auto mode: you pick targets, walk and engage; Lazy fights once you are engaged |
 | `autotarget on\|off` | Toggle automatic hunting |
 | `target "Monster"` | Hunt a specific monster name |
 | `fight` | Set the current target as the hunting target |
@@ -111,6 +112,7 @@ Lazy can run in two main modes:
 
 - **Leader:** Automatically finds eligible monsters around the starting position.
 - **Follower:** Assists a specified player or the party leader. Autotarget is disabled.
+- **Semi-Auto:** You pick targets, walk and engage by hand. Once you are engaged Lazy runs the same combat logic as the other modes and may move to keep the fight going; buffs, cures and other support logic always run. Lazy never selects a target, walks you anywhere or engages before you do, and it only acts offensively on a mob that is engaged or already claimed by your party. `regroup` just prints "go join everyone else".
 
 The hunting radius is controlled by `//lazy range` (default 10 yalms). Targeting rules, including eligible monsters and whether claimed or defeated mobs are ignored, are configured in `settings.lua`.
 
@@ -237,9 +239,11 @@ Say the phrase as the **entire party-chat line**. For example:
 | `stop` / `start` | Stop or start Lazy |
 | `hold` | Stop new pulls and allow current fights to finish |
 | `resume` | Resume operation with a new origin |
-| `regroup` | Move everyone to the party leader and hold |
+| `regroup` | Move everyone to the party leader and hold (Semi-Auto characters only get a message) |
 | `rebuff` | Reset buff timers so buffs are recast |
 | `tnl` | Print session statistics |
+| `trust dismiss <name>` | Everyone holds. The party leader dismisses that trust and stops tracking it so it is not resummoned. Say `resume` when done |
+| `trust summon <name>` | The party leader summons that trust (needs a free slot) and tracks it for resummon |
 
 Phrases can be renamed in `settings.lua` under `party_commands.phrases`.
 

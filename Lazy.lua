@@ -7,6 +7,7 @@ res = require('resources')
 packets = require('packets')
 -- MODULES & FALLBACK DEFINITIONS
 dofile(windower.addon_path .. 'settings.lua')
+dofile(windower.addon_path .. 'Logic/PlayMode.lua')
 dofile(windower.addon_path .. 'Logic/skillchain.lua')
 dofile(windower.addon_path .. 'Logic/magicburst.lua')
 dofile(windower.addon_path .. 'Logic/joblogic.lua')
@@ -228,6 +229,7 @@ weaponskill_active = false,
 autotarget = false,
 target = '',
 assist = '',
+semi_auto = false,
 buffs_active = true,
 cure_active = true,
 rest_active = true,
@@ -247,6 +249,12 @@ dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
 -- Load it after both shared logic modules so its command handlers and
 -- incoming-packet/chat listeners are registered before the addon is used.
 dofile(windower.addon_path .. 'Logic/PartyCommands.lua')
+dofile(windower.addon_path .. 'Logic/LeaderLogic.lua')
+-- Clickable button panel. A failure here must never stop the addon loading.
+local ui_ok, ui_err = pcall(dofile, windower.addon_path .. 'ui/UI.lua')
+if not ui_ok then
+windower.add_to_chat(167, '[Lazy] Button panel failed to load: ' .. tostring(ui_err))
+end
 -- INCOMING PACKETS
 windower.register_event('incoming chunk', function(id, data)
 if id ~= 0x028 then return end
@@ -348,7 +356,8 @@ print('//lazy save')
 print('//lazy show')
 print('//lazy debug on/off')
 print('//lazy leader')
-print('//lazy follower <player>')
+print('//lazy semiauto   (you pick targets, walk and engage; Lazy fights once you are engaged)')
+print('//lazy follower [player|<t>]   (no name: party leader, then whoever invited you, then your target)')
 print('//lazy autotarget on/off')
 print('//lazy target <name>')
 print('//lazy fight')
@@ -366,6 +375,7 @@ print('//lazy join <name>   (same as them telling you the phrase)')
 print('//lazy join cancel')
 print('//lazy sync <name>   (level sync to that party member)')
 print('//lazy sync off')
+print('//lazy ui   (show/hide the button panel; //lazy ui reset)')
 if Party_Command_Help then
 Party_Command_Help()
 end
@@ -374,6 +384,9 @@ end
 -- Give the party module first refusal for its commands (tnl, trust, party,
 -- join and sync). Commands it does not own return false and continue below.
 if Party_Command and Party_Command(command, args, raw_args) then
+return
+end
+if UI_Command and UI_Command(command, args) then
 return
 end
 if command == 'start' then
@@ -422,7 +435,7 @@ death_reported = false
 is_resting = false
 rest_monitor_started = false
 -- DEFAULT MODE
-if settings.assist == '' and not settings.autotarget then
+if settings.assist == '' and not settings.semi_auto and not settings.autotarget then
 settings.autotarget = true
 windower.add_to_chat(207, '[Lazy] No mode selected -- defaulting to leader.')
 end
@@ -481,6 +494,7 @@ end
 if command == 'show' then
 Update_Job_Profile()
 windower.add_to_chat(11, 'Main job: ' .. tostring(current_job))
+windower.add_to_chat(11, 'Mode: ' .. tostring(Get_Play_Mode and Get_Play_Mode() or 'leader'))
 windower.add_to_chat(11, 'Autotarget: ' .. tostring(settings.autotarget))
 windower.add_to_chat(11, 'Spell: ' .. settings.spell)
 windower.add_to_chat(11, 'Use Spell: ' .. tostring(settings.spell_active))
@@ -500,6 +514,9 @@ end
 if command == 'autotarget' then
 settings.autotarget = (args[2] == 'on')
 windower.add_to_chat(3, 'Autotarget: ' .. tostring(settings.autotarget))
+if settings.semi_auto and settings.autotarget then
+windower.add_to_chat(207, '[Lazy] Semi-Auto ignores autotarget. Use //lazy leader to hunt automatically.')
+end
 return
 end
 if command == 'target' then
@@ -544,11 +561,38 @@ return
 end
 if command == 'leader' then
 settings.assist = ''
+settings.semi_auto = false
 settings.autotarget = true
 windower.add_to_chat(3, '[Lazy] Leader mode -- autotarget on, assist cleared.')
 return
 end
--- FOLLOWER
+-- SEMI-AUTO
+-- You pick targets, walk and engage by hand. Once you are engaged Lazy runs
+-- the same combat logic as Leader and Follower (see Logic/PlayMode.lua).
+if command == 'semiauto' then
+settings.semi_auto = true
+settings.assist = ''
+settings.autotarget = false
+-- Let go of leader/follower targeting, but never disturb an established fight.
+local player = windower.ffxi.get_player()
+if not combat_locked_target_id
+and (not player or player.status ~= 1)
+then
+managed_target_id = nil
+support_return_target_id = nil
+pending_target_id = nil
+pending_target_time = 0
+engage_sent_target_id = nil
+combat_lock_time = nil
+combat_started = false
+end
+windower.ffxi.follow(0)
+windower.add_to_chat(
+3,
+'[Lazy] Semi-Auto mode -- you choose targets, move and engage; Lazy fights once you are engaged.'
+)
+return
+end
 -- FOLLOWER
 if command == 'follower' then
     -- Preserve the actual player-name capitalization.
@@ -558,36 +602,41 @@ if command == 'follower' then
         name = nil
     end
 
-    -- No name supplied: find the current party leader.
+    -- "<t>" (or "t") means the current target.
+    local target_only = false
+
+    if name and (string.lower(name) == '<t>' or string.lower(name) == 't') then
+        name = nil
+        target_only = true
+    end
+
+    -- No name supplied: party leader -> whoever invited you -> your target.
     if not name then
-        local party = windower.ffxi.get_party()
-        local leader_id = party and party.party1_leader
-
-        if leader_id then
-            for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-                local member = party[key]
-
-                if member
-                    and member.name
-                    and member.mob
-                    and member.mob.id == leader_id
-                then
-                    name = member.name
-                    break
-                end
-            end
-        end
+        local how
+        name, how = Resolve_Follow_Name(target_only)
 
         if not name then
-            windower.add_to_chat(
-                167,
-                '[Lazy] Could not identify the party leader. Try //lazy follower <name>.'
-            )
+            if how == 'self' then
+                windower.add_to_chat(167, '[Lazy] You are the party leader, so there is nobody to follow. Use //lazy leader.')
+            elseif target_only then
+                windower.add_to_chat(167, '[Lazy] Target a player first, then //lazy follower <t>.')
+            else
+                windower.add_to_chat(
+                    167,
+                    '[Lazy] Could not find anyone to follow: no party leader detected, ' ..
+                    'nobody has invited you, and no player is targeted. ' ..
+                    'Target the leader and try again, or //lazy follower <name>.'
+                )
+            end
+
             return
         end
+
+        windower.add_to_chat(2, '[Lazy] Following ' .. name .. ' (' .. how .. ').')
     end
 
     settings.assist = name
+    settings.semi_auto = false
     settings.autotarget = false
 
     -- Clear stale leader-mode targeting, but never disturb

@@ -1,3 +1,4 @@
+
 -- WHM JOB PROFILE
 -- White Mage primary healing and support.
 JOB_PROFILES.WHM = {
@@ -10,9 +11,11 @@ JOB_PROFILES.WHM = {
 	self_buffs = {
 		{ name = 'Protectra V', interval = 30 },
 		{ name = 'Shellra V', interval = 30 },
-		{ name = 'Auspice', interval = 300 },
-		{ name = 'Baraero', interval = 300 },
-		{ name = 'Reraise IV', fallback = 'Reraise III', interval = 3600 },
+		{ name = 'Auspice', interval = 5 },
+		{ name = 'Baraera', interval = 5 },
+		{ name = 'Boost-STR', interval = 3 },
+		{ name = 'Reraise IV', fallback = 'Reraise III', interval = 60 },
+			{ name = 'Aurorastorm II', fallback = 'Aurorastorm', interval = 3.2  },
 	},
 
 	-- CURE BOT

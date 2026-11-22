@@ -439,6 +439,40 @@ local function Nukeable(target, player)
 	end
 	return true
 end
+-- FOLLOWER HP GATE
+-- In Follower Mode the leader picks the pull, so a follower must not open on a
+-- mob the leader has not hit yet: it would take hate while the leader is still
+-- choosing or switching targets.
+--   above 99%        cast nothing
+--   99% down to 91%  tier I and II nukes only
+--   90% or lower     normal
+-- Leader and Semi-Auto modes are never limited. A mob that regenerates back
+-- above 99% mid-fight does not stop a fight the follower already joined.
+local follower_opened_id = nil
+local function Follower_Gate_Applies(target)
+	if (settings.assist or '') == '' then
+		return false
+	end
+	return Is_Enemy_Target(target)
+end
+-- True while a follower should hold fire on this target.
+function Follower_Hold_Fire(target)
+	if not Follower_Gate_Applies(target) then
+		return false
+	end
+	if target.hpp <= 99 then
+		follower_opened_id = target.id
+		return false
+	end
+	return follower_opened_id ~= target.id
+end
+-- Highest nuke tier a follower may use on this target (nil = no limit).
+function Follower_Tier_Cap(target)
+	if Follower_Gate_Applies(target) and target.hpp > 90 then
+		return 2
+	end
+	return nil
+end
 -- Find the spell family for the target's known elemental weakness.
 function Nuke_Family_For(target)
 	local list = (active_profile and active_profile.nuke_weakness)
@@ -556,6 +590,11 @@ function Try_Free_Nuke()
 	local known = windower.ffxi.get_spells()
 	local reserve = Burst_Reserve_MP(family)
 	local max_tier = math.min(active_profile.free_nuke_max_tier or 4, 6)
+	-- Followers keep to tier I and II until the mob is at 90% or lower.
+	local follower_cap = Follower_Tier_Cap(target)
+	if follower_cap then
+		max_tier = math.min(max_tier, follower_cap)
+	end
 	local chosen
 	for tier = max_tier, 1, -1 do
 		local name = family .. ROMAN[tier]

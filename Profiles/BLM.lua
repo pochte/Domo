@@ -1,5 +1,6 @@
+
 -- BLM JOB PROFILE
--- Black Mage magic burst spells (Tier VI cap).
+-- Black Mage dedicated nuker and magic burster.
 
 JOB_PROFILES.BLM = {
 	-- MELEE
@@ -8,13 +9,46 @@ JOB_PROFILES.BLM = {
 
 	-- SUPPORT
 	haste_active = false,
-	self_buffs = {},
+	self_buffs = {
+		{ name = 'Klimaform', interval = 3.2 },
+		{ name = 'Windstorm', interval = 3.2 },
+	},
 
-	-- FREE NUKE (//lazy freenuke). Tier IV and lower are cast on the target
-	-- between bursts; V and VI are saved for magic burst.
+	-- DEFENSIVE ABILITIES
+	-- Manaward when being attacked.
+	-- Manawall before highest-tier nukes when available.
+	defensive_abilities = {
+		{
+			name = 'Manaward',
+			trigger = 'being_attacked',
+		},
+		{
+			name = 'Manawall',
+			trigger = 'highest_tier_nuke',
+		},
+	},
+
+	-- NUKING ABILITIES
+	-- Elemental Seal when available before nuking.
+	nuke_abilities = {
+		{
+			name = 'Elemental Seal',
+			trigger = 'nuke',
+		},
+	},
+
+	-- POST MAGIC BURST
+	-- Use immediately after a successful magic burst.
+	post_burst_abilities = {
+		'Enmity Douse',
+	},
+
+	-- FREE NUKE (//lazy freenuke).
+	-- Tier IV and lower are cast on the target between bursts.
+	-- V and VI are saved for magic burst.
 	free_nuke = true,
 	free_nuke_max_tier = 4,
-	free_nuke_weather = true, -- failsafe: cast the matching Storm if the weather is wrong
+	free_nuke_weather = true,
 
 	-- MAGIC BURST
 	magic_burst = true,
