@@ -65,13 +65,76 @@ local function Find_Party_Member(name)
     return nil
 end
 
+local function Is_Known_Trust_Name(name)
+    if not name or name == '' then
+        return false
+    end
+
+    local want = string.lower(name)
+
+    if type(tracked_trusts) == 'table' then
+        for _, n in ipairs(tracked_trusts) do
+            if string.lower(tostring(n)) == want then
+                return true
+            end
+        end
+    end
+
+    if type(trust_jobs) == 'table' then
+        for n in pairs(trust_jobs) do
+            if string.lower(tostring(n)) == want then
+                return true
+            end
+        end
+    end
+
+    if type(Get_Living_Trusts) == 'function' then
+        local ok, living = pcall(Get_Living_Trusts)
+        if ok and type(living) == 'table' then
+            for n in pairs(living) do
+                if string.lower(tostring(n)) == want then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 local function Is_Trust_Member(m)
-    return m and m.mob and m.mob.is_npc and true or false
+    if not m or not m.name then
+        return false
+    end
+
+    if m.mob then
+        return m.mob.is_npc and true or false
+    end
+
+    -- Fallback when m.mob is temporarily nil (zoning, out of range, or spawning)
+    return Is_Known_Trust_Name(m.name)
+end
+
+local function Is_Self_Party_Leader()
+    local party = windower.ffxi.get_party()
+    local me = windower.ffxi.get_player()
+
+    if not party or not me then
+        return false
+    end
+
+    local leader_id = party.party1_leader
+
+    -- Solo players (no party formed yet) have no party1_leader and can invite
+    if not leader_id or leader_id == 0 then
+        return true
+    end
+
+    return leader_id == me.id
 end
 
 -- Real players in the party (us included). A member we cannot see is
--- assumed to be a player, since trusts are always next to us.
-
+-- assumed to be a player unless their name matches a known trust.
 local function Party_Players()
     local out = {}
     local party = windower.ffxi.get_party()
@@ -277,22 +340,33 @@ local function Join_Aborted(run_id)
 end
 
 -- Dismiss trusts and verify the party data updates before trying to invite.
--- A full party cannot accept the player, so waiting for the invite first would
--- deadlock the join flow when all six slots are occupied by us and trusts.
+-- Retries /retr all periodically in case the character was mid-cast or busy
+-- when the first command fired.
 local function Dismiss_Trusts_And_Wait(run_id, timeout)
     if Count_Trusts_In_Party() == 0 then
         return true
     end
 
-    windower.send_command('input /retr all')
+    -- Ensure we are not engaged or moving when dismissing trusts
+    local me = windower.ffxi.get_player()
+    if me and me.status == 1 then
+        windower.send_command('input /attack off')
+    end
+    windower.ffxi.follow(0)
+    windower.ffxi.run(false)
 
-    for _ = 1, timeout do
+    for elapsed = 0, timeout do
         if Join_Aborted(run_id) then
             return false
         end
 
         if Count_Trusts_In_Party() == 0 then
             return true
+        end
+
+        -- Send /retr all initially and retry every 3 seconds if still present
+        if elapsed % 3 == 0 then
+            windower.send_command('input /retr all')
         end
 
         coroutine.sleep(1)
@@ -365,28 +439,41 @@ local function Party_Join_Run(name, run_id)
         return
     end
 
-   
-    -- 2. Make sure there is a free party slot BEFORE inviting. If the party
-    -- is full and trusts occupy any slots, dismiss them and verify they are
-    -- gone; otherwise the invite cannot be accepted and this routine waits
-    -- until the invite timeout without ever reaching trust cleanup.
-    if not Find_Party_Member(name) and Count_Party_Members() >= MAX_PARTY_SIZE then
-        if Count_Trusts_In_Party() > 0 then
-            Say('Party’s full — dismissing trusts to make room for ' .. name .. '.')
+    -- Verify we are actually allowed to invite (must be solo or party leader).
+    if not Is_Self_Party_Leader() then
+        Say('Cannot invite ' .. name .. ' — I am not the party leader.')
+        Tell(name, 'I am not the party leader right now, so I cannot send an invite.')
+        return
+    end
 
-            if not Dismiss_Trusts_And_Wait(run_id, 10) then
-                if not Join_Aborted(run_id) then
-                    Say('Couldn’t dismiss trusts. Cancelling the join.')
-                    Tell(name, 'Couldn’t clear a spot for you. Try again in a bit.')
-                end
-
-                return
-            end
-        else
+    -- 2. Dismiss any active trusts BEFORE inviting so trust AI/casting does not
+    -- interfere with party slots, combat state, or subsequent level sync.
+    if not Find_Party_Member(name) then
+        if Count_Party_Members() >= MAX_PARTY_SIZE and Count_Trusts_In_Party() == 0 then
             Say('Party is full of players — no room for ' .. name .. '.')
             Tell(name, 'Party is full and there are no trusts to dismiss. Try again when a spot opens.')
             return
         end
+
+        if Count_Trusts_In_Party() > 0 then
+            Say('Dismissing trusts to prepare party for ' .. name .. '.')
+
+            if not Dismiss_Trusts_And_Wait(run_id, 12) then
+                if not Join_Aborted(run_id) then
+                    Say('Couldn’t dismiss trusts cleanly. Cancelling the join.')
+                    Tell(name, 'Couldn’t clear trusts right now. Try again in a bit.')
+                end
+
+                return
+            end
+
+            -- Brief settle delay after trusts vanish before sending /pcmd add
+            coroutine.sleep(1)
+        end
+    end
+
+    if Join_Aborted(run_id) then
+        return
     end
 
     -- Invite and wait for them to accept.
@@ -411,7 +498,9 @@ local function Party_Join_Run(name, run_id)
 
         if not resent and waited >= cfg.invite_timeout / 2 then
             resent = true
-            windower.send_command('input /pcmd add ' .. name)
+            if Is_Self_Party_Leader() then
+                windower.send_command('input /pcmd add ' .. name)
+            end
         end
 
         coroutine.sleep(1)
@@ -497,7 +586,7 @@ local function Party_Join_Run(name, run_id)
                 if Count_Trusts_In_Party() > 0 then
                     Say('Dismissing trusts before level sync.')
 
-                    if not Dismiss_Trusts_And_Wait(run_id, 10) then
+                    if not Dismiss_Trusts_And_Wait(run_id, 12) then
                         Say('Couldn’t fully dismiss trusts, trying the sync anyway.')
                     end
                 end
@@ -561,7 +650,7 @@ local function Party_Join_Run(name, run_id)
     if #dropped > 0 and Count_Trusts_In_Party() > 0 then
         Say('Dismissing trusts before bringing the selected ones back.')
 
-        if not Dismiss_Trusts_And_Wait(run_id, 10) then
+        if not Dismiss_Trusts_And_Wait(run_id, 12) then
             if not Join_Aborted(run_id) then
                 Say('Trusts did not dismiss cleanly. Leaving the join paused for safety. Use //domo join cancel if needed.')
             end
@@ -610,6 +699,7 @@ end
 local function Party_Join_Reset()
     party_join_active = false
     party_join_resummon_ok = false
+    party_join_name = nil
 end
 
 function Party_Join_Cancel()
@@ -639,7 +729,14 @@ function Party_Join_Begin(name)
         return false
     end
 
+    if not Is_Self_Party_Leader() then
+        Say('Cannot start party join for ' .. tostring(name) .. ' — I am not the party leader.')
+        Tell(name, 'I am not the party leader right now, so I cannot invite you.')
+        return false
+    end
+
     party_join_active = true
+    party_join_name = name
     party_join_resummon_ok = false
     party_join_run_id = party_join_run_id + 1
 
@@ -668,9 +765,6 @@ function Party_Join_Begin(name)
 
     return true
 end
-
--- Incoming tell containing the phrase (default "chicken nuggets").
--- Case, punctuation and extra words do not matter.
 
 -- Incoming tell containing the phrase (default "chicken nuggets").
 -- Case, punctuation and extra words do not matter.
@@ -846,15 +940,21 @@ local function Load_Trusted_And_Phrase()
         -- Migrate any existing trusted names from settings.xml.
         local old_names = settings and settings.trusted_players or ''
 
-        file:write('# Domo private settings\n')
-        file:write('# phrase: sets the secret join phrase (case-insensitive)\n')
-        file:write('phrase: chicken nuggets\n')
-        file:write('\n')
-        file:write('# Trusted players (one name per line)\n')
+        file:write('# Domo private settings
+')
+        file:write('# phrase: sets the secret join phrase (case-insensitive)
+')
+        file:write('phrase: chicken nuggets
+')
+        file:write('
+')
+        file:write('# Trusted players (one name per line)
+')
 
         if type(old_names) == 'string' then
             for name in old_names:gmatch('[^,%s]+') do
-                file:write(name .. '\n')
+                file:write(name .. '
+')
             end
         end
 
@@ -910,14 +1010,20 @@ local function Save_Trusted(list, phrase_override)
     end
 
     local ok, write_error = pcall(function()
-        assert(file:write('# Domo private settings\n'))
-        assert(file:write('# phrase: sets the secret join phrase (case-insensitive)\n'))
-        assert(file:write('phrase: ' .. tostring(phrase) .. '\n'))
-        assert(file:write('\n'))
-        assert(file:write('# Trusted players (one name per line)\n'))
+        assert(file:write('# Domo private settings
+'))
+        assert(file:write('# phrase: sets the secret join phrase (case-insensitive)
+'))
+        assert(file:write('phrase: ' .. tostring(phrase) .. '
+'))
+        assert(file:write('
+'))
+        assert(file:write('# Trusted players (one name per line)
+'))
 
         for _, name in ipairs(list) do
-            assert(file:write(name .. '\n'))
+            assert(file:write(name .. '
+'))
         end
     end)
 
@@ -2151,7 +2257,7 @@ local function Run_Inv_Command(name, sender)
     end
 
     -- Strip accidental quotes.
-    name = name:gsub('^["\'](.*)["\']$', '%1')
+    name = name:gsub('^["'](.*)["']$', '%1')
     name = name:match('^%s*(.-)%s*$') or name
 
     local added = Party_Add_Trusted_Player(name)
@@ -2164,17 +2270,7 @@ local function Run_Inv_Command(name, sender)
 
     -- Only the leader (or a solo character) runs the invite/join routine so
     -- the whole party does not spam /pcmd add.
-    local should_join = true
-
-    if Is_Party_Leader then
-        local ok, is_leader = pcall(Is_Party_Leader)
-
-        if ok then
-            should_join = is_leader and true or false
-        end
-    end
-
-    if should_join then
+    if Is_Self_Party_Leader() then
         Party_Join_Begin(name)
     else
         Say('Leader will handle the invite for ' .. name .. '.')
@@ -2301,7 +2397,7 @@ function Party_Command(command, args, raw_args)
         new_phrase = (new_phrase or ''):match('^%s*(.-)%s*$') or ''
 
         -- Strip optional surrounding quotes.
-        new_phrase = new_phrase:gsub('^["\'](.*)["\']$', '%1')
+        new_phrase = new_phrase:gsub('^["'](.*)["']$', '%1')
         new_phrase = new_phrase:match('^%s*(.-)%s*$') or ''
 
         if new_phrase == '' then
