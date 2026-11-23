@@ -540,6 +540,7 @@ local function Party_Join_Run(name, run_id)
         return
     end
 
+
     -- 5. Trust roster: the party has six slots and the new player took one.
     local roster = {}
 
@@ -556,16 +557,13 @@ local function Party_Join_Run(name, run_id)
         Say('Not bringing back: ' .. table.concat(dropped, ', '))
     end
 
-    -- If a trust has to go and some are still out, dismiss them all so the
-    -- slot is free and the roster comes back clean. (Level sync and a
-    -- full-party invite already dismiss them; with nothing to drop and no
-    -- sync the trusts that are out are simply left alone.)
+    -- Dismiss trusts if any need to be removed from the roster.
     if #dropped > 0 and Count_Trusts_In_Party() > 0 then
         Say('Dismissing trusts before bringing the selected ones back.')
 
         if not Dismiss_Trusts_And_Wait(run_id, 10) then
             if not Join_Aborted(run_id) then
-                Say('Trusts didn’t dismiss cleanly. Leaving the join paused for safety. Use //domo join cancel if needed.')
+                Say('Trusts did not dismiss cleanly. Leaving the join paused for safety. Use //domo join cancel if needed.')
             end
 
             return
@@ -601,7 +599,11 @@ local function Party_Join_Run(name, run_id)
         end
     end
 
-    Tell(name, 'You’re in. Back to it.')
+    if Join_Aborted(run_id) then
+        return
+    end
+
+    Tell(name, 'You are in. Back to it.')
     Say('Party join done.')
 end
 
@@ -652,19 +654,23 @@ function Party_Join_Begin(name)
         end
     end, 0)
 
-    -- Watchdog: if the run dies on an error the flags would stay set and
-    -- pulls would stay paused forever.
+    -- Watchdog: invalidate the run if it takes too long.
     coroutine.schedule(function()
-        coroutine.sleep(120)
+        coroutine.sleep(180)
 
         if run_id == party_join_run_id and party_join_active then
             Say('Party join timed out, resuming.')
+
+            party_join_run_id = party_join_run_id + 1
             Party_Join_Reset()
         end
     end, 0)
 
     return true
 end
+
+-- Incoming tell containing the phrase (default "chicken nuggets").
+-- Case, punctuation and extra words do not matter.
 
 -- Incoming tell containing the phrase (default "chicken nuggets").
 -- Case, punctuation and extra words do not matter.
@@ -695,19 +701,34 @@ windower.register_event('chat message', function(message, sender, mode, gm)
     end
 
     if not Start_Engine then
-        Say('Got the phrase from ' .. sender .. ' but Domo isn’t running (//domo start).')
-        return
-    end
-
-    if party_join_active then
-        Say('Got the phrase from ' .. sender .. ' but a join is already running (//domo join cancel).')
+        Say('Got the phrase from ' .. sender .. ' but Domo is not running (//domo start).')
         return
     end
 
     -- A current party member is trusted automatically.
-    -- They do not need to trigger a new join while already in the party.
     if Find_Party_Member(sender) then
         Party_Add_Trusted_Player(sender)
+        return
+    end
+
+    -- If the same player sends the phrase again, restart their join.
+    if party_join_active then
+        if party_join_name and
+            string.lower(party_join_name) == string.lower(sender) then
+
+            Say(sender .. ' sent the phrase again. Restarting their party join.')
+
+            -- Invalidate the previous attempt.
+            party_join_run_id = party_join_run_id + 1
+            Party_Join_Reset()
+
+            -- Start a fresh attempt for the same player.
+            Party_Join_Begin(sender)
+            return
+        end
+
+        -- Another player cannot interrupt the current join.
+        Say('A party join for ' .. tostring(party_join_name) .. ' is already running.')
         return
     end
 
@@ -719,6 +740,7 @@ windower.register_event('chat message', function(message, sender, mode, gm)
 
     Party_Join_Begin(sender)
 end)
+
 
 -- ===========================================================================
 -- PARTY COMMANDS
