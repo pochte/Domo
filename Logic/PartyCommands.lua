@@ -937,39 +937,79 @@ local function Load_Trusted_And_Phrase()
             return {}, nil
         end
 
-        -- Migrate any existing trusted names from settings.xml.
-        local old_names = settings and settings.trusted_players or ''
-
-        file:write('# Domo private settings
-')
-        file:write('# phrase: sets the secret join phrase (case-insensitive)
-')
-        file:write('phrase: chicken nuggets
-')
-        file:write('
-')
-        file:write('# Trusted players (one name per line)
-')
+       file:write('# Domo private settings\n')
+        file:write('# phrase: sets the secret join phrase (case-insensitive)\n')
+        file:write('phrase: chicken nuggets\n')
+        file:write('\n')
+        file:write('# Trusted players (one name per line)\n')
 
         if type(old_names) == 'string' then
             for name in old_names:gmatch('[^,%s]+') do
-                file:write(name .. '
-')
+                file:write(name .. '\n')
+            end
+        end
             end
         end
 
-        file:close()
+       local function Load_Trusted_And_Phrase()
+    local file = io.open(TRUSTED_PLAYERS_PATH, 'r')
 
-        Say('Created a new trusted player list.')
+    if not file then
+        local created_names = {}
+        local seen = {}
+        local default_phrase = 'chicken nuggets'
 
-        file = io.open(TRUSTED_PLAYERS_PATH, 'r')
-
-        if not file then
-            return {}, nil
+        local function add_unique_name(raw)
+            local clean = tostring(raw or ''):match('^%s*(.-)%s*$') or ''
+            if clean == '' then
+                return
+            end
+            local key = string.lower(clean)
+            if not seen[key] then
+                seen[key] = true
+                created_names[#created_names + 1] = clean
+            end
         end
+
+        -- Migrate any existing trusted names from settings.xml.
+        local old_names = settings and settings.trusted_players or ''
+        if type(old_names) == 'string' then
+            for name in old_names:gmatch('[^,%s]+') do
+                add_unique_name(name)
+            end
+        end
+
+        local out_file = io.open(TRUSTED_PLAYERS_PATH, 'w')
+        if not out_file then
+            Say('Couldn’t create the trusted player list.')
+            return created_names, default_phrase
+        end
+
+        local ok = pcall(function()
+            out_file:write('# Domo private settings\n')
+            out_file:write('# phrase: sets the secret join phrase (case-insensitive)\n')
+            out_file:write('phrase: ' .. default_phrase .. '\n')
+            out_file:write('\n')
+            out_file:write('# Trusted players (one name per line)\n')
+
+            for _, name in ipairs(created_names) do
+                out_file:write(name .. '\n')
+            end
+        end)
+
+        out_file:close()
+
+        if ok then
+            Say('Created a new trusted player list.')
+        else
+            Say('Wrote trusted player list with warnings.')
+        end
+
+        return created_names, default_phrase
     end
 
     local names = {}
+    local seen = {}
     local phrase = nil
 
     for line in file:lines() do
@@ -979,9 +1019,18 @@ local function Load_Trusted_And_Phrase()
             local p = trimmed:match('^[Pp][Hh][Rr][Aa][Ss][Ee]%s*:%s*(.+)$')
 
             if p then
-                phrase = p:match('^%s*(.-)%s*$')
+                local val = p:match('^%s*(.-)%s*$') or ''
+                val = val:gsub('^["\'](.-)["\']$', '%1')
+                val = val:match('^%s*(.-)%s*$')
+                if val ~= '' then
+                    phrase = val
+                end
             else
-                names[#names + 1] = trimmed
+                local key = string.lower(trimmed)
+                if not seen[key] then
+                    seen[key] = true
+                    names[#names + 1] = trimmed
+                end
             end
         end
     end
@@ -1009,24 +1058,17 @@ local function Save_Trusted(list, phrase_override)
         return false
     end
 
-    local ok, write_error = pcall(function()
-        assert(file:write('# Domo private settings
-'))
-        assert(file:write('# phrase: sets the secret join phrase (case-insensitive)
-'))
-        assert(file:write('phrase: ' .. tostring(phrase) .. '
-'))
-        assert(file:write('
-'))
-        assert(file:write('# Trusted players (one name per line)
-'))
+   local ok, write_error = pcall(function()
+        assert(file:write('# Domo private settings\n'))
+        assert(file:write('# phrase: sets the secret join phrase (case-insensitive)\n'))
+        assert(file:write('phrase: ' .. tostring(phrase) .. '\n'))
+        assert(file:write('\n'))
+        assert(file:write('# Trusted players (one name per line)\n'))
 
         for _, name in ipairs(list) do
-            assert(file:write(name .. '
-'))
+            assert(file:write(name .. '\n'))
         end
     end)
-
     local close_ok, close_error = file:close()
 
     if not ok or not close_ok then
@@ -2256,8 +2298,8 @@ local function Run_Inv_Command(name, sender)
         return
     end
 
-    -- Strip accidental quotes.
-    name = name:gsub('^["'](.*)["']$', '%1')
+  -- Strip accidental quotes.
+    name = name:gsub('^["\'](.*)["\']$', '%1')
     name = name:match('^%s*(.-)%s*$') or name
 
     local added = Party_Add_Trusted_Player(name)
@@ -2396,8 +2438,8 @@ function Party_Command(command, args, raw_args)
         local new_phrase = table.concat(raw_args, ' ', 2)
         new_phrase = (new_phrase or ''):match('^%s*(.-)%s*$') or ''
 
-        -- Strip optional surrounding quotes.
-        new_phrase = new_phrase:gsub('^["'](.*)["']$', '%1')
+      -- Strip optional surrounding quotes.
+        new_phrase = new_phrase:gsub('^["\'](.*)["\']$', '%1')
         new_phrase = new_phrase:match('^%s*(.-)%s*$') or ''
 
         if new_phrase == '' then
