@@ -8,25 +8,38 @@ JOB_PROFILES.MNK = {
     debuff_hold_hpp = 50,
 
     use_weaponskills = true,
+
+    -- WEAPON-SPECIFIC SKILLCHAIN ROTATIONS
     weaponskills = {
         min_tp = 1000,
 
         rotations = {
             {
-                name = 'Farming',
+                name = 'Hand-to-Hand',
                 weapon_type = 'Hand-to-Hand',
                 required_ws = {
                     'Shijin Spiral',
                     'Victory Smite',
                 },
                 sequence = {
-                    'Shijin Spiral',
-                    'Victory Smite',
-                    'Victory Smite',
+                    { name = 'Shijin Spiral', min_tp = 1000 },
+                    { name = 'Victory Smite', min_tp = 1000 },
+                    { name = 'Victory Smite', min_tp = 1000 },
                 },
                 priority = 1,
             },
         },
+    },
+
+    -- BUFFS
+    needed_buffs = {
+        'Boost',
+        'Focus',
+        'Dodge',
+        'Counterstance',
+        'Footwork',
+        'Impetus',
+        'Mantra',
     },
 
     -- SELF BUFFS
@@ -52,4 +65,6 @@ JOB_PROFILES.MNK = {
     emergency_cure = false,
     emergency_cure_threshold = 25,
     cure_tiers = {},
+
+    food = 'Soy Ramen',
 }
