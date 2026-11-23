@@ -1,3 +1,4 @@
+
 -- Skillchain detection for Domo
 -- Logic ported from SkillChains by Ivaar
 require('actions')
@@ -171,9 +172,13 @@ local function check_props(old, new)
                 if result then
                     return unpack(result)
                 end
+
+                -- FIX: Compare the skillchain levels, not a number
+                -- against the entire sc_info table.
+                local second_data = sc_info[second]
                 if #old > 3
-                    and combo.lvl == sc_info[second]
-                    and sc_info[second].lvl then
+                    and second_data
+                    and combo.lvl == second_data.lvl then
                     break
                 end
             end

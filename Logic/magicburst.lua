@@ -1,3 +1,4 @@
+
 -- MAGICBURST.LUA
 -- Shared magic burst and free nuke logic.
 -- ELEMENTAL ALIGNMENTS
@@ -363,7 +364,14 @@ function Try_Magic_Burst()
 			return false
 		end
 	end
-	windower.send_command('input /ma "' .. spell_name .. '" <t>')
+
+	-- FIX: Ninjutsu must use /nin, not /ma.
+	-- The existing NIN_TOOLS table identifies all six Ninjutsu families.
+	-- Ordinary magic continues to use /ma.
+	local ninjutsu_prefix = spell_name:match('^(%a+):')
+	local command = NIN_TOOLS[ninjutsu_prefix] and '/nin' or '/ma'
+	windower.send_command('input ' .. command .. ' "' .. spell_name .. '" <t>')
+
 	burst_gap_until = os.clock() + burst_gap
 	-- Hold the other monitors off for a moment; the next burst does not
 	-- wait for it (Burst_Monitor below).

@@ -1,38 +1,59 @@
+
 -- NIN JOB PROFILE
 -- Ninja -- Frontline melee, magic bursts during skillchains.
 -- Loaded by Domo.lua into JOB_PROFILES.NIN
+
 JOB_PROFILES.NIN = {
-	auto_engage = true,
-	use_weaponskills = true,
-	haste_active = false,
-	self_buffs = {
-		{ name = 'Kakka: Ichi', interval = 5 },
-	},
-	magic_burst = true,
-	burst_spells = {
-		Fire     = { 'Katon: San', 'Katon: Ni', 'Katon: Ichi' },
-		Blizzard = { 'Hyoton: San', 'Hyoton: Ni', 'Hyoton: Ichi' },
-		Aero     = { 'Huton: San', 'Huton: Ni', 'Huton: Ichi' },
-		Stone    = { 'Doton: San', 'Doton: Ni', 'Doton: Ichi' },
-		Thunder  = { 'Raiton: San', 'Raiton: Ni', 'Raiton: Ichi' },
-		Water    = { 'Suiton: San', 'Suiton: Ni', 'Suiton: Ichi' },
-		Light    = { 'Raiton: San', 'Raiton: Ni', 'Raiton: Ichi' },
-		Darkness = { 'Hyoton: San', 'Hyoton: Ni', 'Hyoton: Ichi' },
-	},
-	ws_sc_starter = {
-		'Blade: Ten',
-		2000
-	},
-	ws_sc_closers = {
-		'Blade: Ten'
-	},
-	-- //domo chainmode: Shun > Kamu > Shun, then the opener fires again once
-	-- the window ends, so it repeats. //domo openmode uses the starter and
-	-- closers above instead.
-	ws_sc_chain = {
-		{ 'Blade: Shun', 1000 },
-		{ 'Blade: Kamu', 1000 },
-		{ 'Blade: Shun', 1000 },
-	},
-	food = 'Soy Ramen',
+    auto_engage = true,
+    use_weaponskills = true,
+
+    haste_active = false,
+
+    self_buffs = {
+        { name = 'Kakka: Ichi', interval = 5 },
+    },
+
+    -- BUFFS
+    needed_buffs = {
+        'Berserk',
+        'Aggressor',
+        'Yonin',
+        'Issekigan',
+    },
+
+    -- MAGIC BURST
+    magic_burst = true,
+
+    burst_spells = {
+        Fire     = { 'Katon: San', 'Katon: Ni', 'Katon: Ichi' },
+        Blizzard = { 'Hyoton: San', 'Hyoton: Ni', 'Hyoton: Ichi' },
+        Aero     = { 'Huton: San', 'Huton: Ni', 'Huton: Ichi' },
+        Stone    = { 'Doton: San', 'Doton: Ni', 'Doton: Ichi' },
+        Thunder  = { 'Raiton: San', 'Raiton: Ni', 'Raiton: Ichi' },
+        Water    = { 'Suiton: San', 'Suiton: Ni', 'Suiton: Ichi' },
+        Light    = { 'Raiton: San', 'Raiton: Ni', 'Raiton: Ichi' },
+        Darkness = { 'Hyoton: San', 'Hyoton: Ni', 'Hyoton: Ichi' },
+    },
+
+    -- LEGACY SKILLCHAIN SETTINGS
+    ws_sc_starter = {
+        'Blade: Chi',
+        2000
+    },
+
+    ws_sc_closers = {
+        'Blade: Chi'
+    },
+
+    -- //domo chainmode: Chi > Kamu > Chi, then the opener fires again once
+    -- the window ends, so it repeats. //domo openmode uses the starter and
+    -- closers above instead.
+    ws_sc_chain = {
+        { 'Blade: Chi', 1000 },
+        { 'Blade: Kamu', 1000 },
+        { 'Blade: Chi', 1000 },
+    },
+
+    -- FOOD
+    food = 'Soy Ramen',
 }
