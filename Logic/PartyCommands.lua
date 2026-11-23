@@ -71,6 +71,7 @@ end
 
 -- Real players in the party (us included). A member we cannot see is
 -- assumed to be a player, since trusts are always next to us.
+
 local function Party_Players()
     local out = {}
     local party = windower.ffxi.get_party()
@@ -88,6 +89,39 @@ local function Party_Players()
     end
 
     return out
+end
+
+-- All real players must be confirmed in our current zone.
+-- Missing zone information is NOT treated as ready.
+local function All_Party_Players_In_Zone()
+    local info = windower.ffxi.get_info()
+    local me = windower.ffxi.get_player()
+
+    if not info or info.zone == nil or not me then
+        return false
+    end
+
+    local players = Party_Players()
+
+    if #players == 0 then
+        return false
+    end
+
+    for _, member in ipairs(players) do
+        if member.name ~= me.name then
+            local member_zone = member.zone
+
+            if member_zone == nil and member.mob then
+                member_zone = member.mob.zone
+            end
+
+            if member_zone == nil or member_zone ~= info.zone then
+                return false
+            end
+        end
+    end
+
+    return true
 end
 
 local function Count_Trusts_In_Party()
@@ -123,6 +157,7 @@ local function Count_Party_Members()
 
     return n
 end
+
 
 -- Lowest master level among real players. ONLY characters with a master
 -- level of 1 or higher count: syncing to a non-master would drop everyone
@@ -330,6 +365,7 @@ local function Party_Join_Run(name, run_id)
         return
     end
 
+   
     -- 2. Make sure there is a free party slot BEFORE inviting. If the party
     -- is full and trusts occupy any slots, dismiss them and verify they are
     -- gone; otherwise the invite cannot be accepted and this routine waits
@@ -387,6 +423,33 @@ local function Party_Join_Run(name, run_id)
     -- Save the new party member immediately. Party_Tick is paused while
     -- this join routine owns the party, so do not wait for the monitor.
     Party_Add_Trusted_Player(name)
+
+    -- Wait until every real player is confirmed in our zone before
+    -- continuing to level sync or summon trusts.
+    local last_zone_message = os.clock()
+
+    if not All_Party_Players_In_Zone() then
+        windower.send_command('input /p Waiting on everyone to get here before starting.')
+    end
+
+    while not All_Party_Players_In_Zone() do
+        if Join_Aborted(run_id) then
+            return
+        end
+
+        local now = os.clock()
+
+        if now - last_zone_message >= 20 then
+            last_zone_message = now
+            windower.send_command('input /p Waiting on everyone to get here before starting.')
+        end
+
+        coroutine.sleep(1)
+    end
+
+    if Join_Aborted(run_id) then
+        return
+    end
 
     -- 3. Give their job / level / master level a moment to arrive.
     local joiner, info
@@ -592,7 +655,7 @@ function Party_Join_Begin(name)
     -- Watchdog: if the run dies on an error the flags would stay set and
     -- pulls would stay paused forever.
     coroutine.schedule(function()
-        coroutine.sleep(600)
+        coroutine.sleep(120)
 
         if run_id == party_join_run_id and party_join_active then
             Say('Party join timed out, resuming.')
@@ -928,71 +991,6 @@ local dead_since = {}
 local DEAD_CONFIRM_SECONDS = 4
 local NEW_MEMBER_GRACE_SECONDS = 15
 
-local function Roster()
-    local out = {}
-    local now = os.clock()
-    local present = {}
-    local party = windower.ffxi.get_party()
-    local me = windower.ffxi.get_player()
-    local info = windower.ffxi.get_info()
-
-    if not party or not me or not info then
-        return out
-    end
-
-    for _, key in ipairs(TRUST_PARTY_KEYS) do
-        local m = party[key]
-
-        if m and m.name and not Is_Trust_Member(m) then
-            local mob = m.mob
-            local is_me = (m.name == me.name)
-            local in_zone = (m.zone == nil) or (m.zone == info.zone)
-
-            present[m.name] = true
-            member_seen[m.name] = member_seen[m.name] or now
-
-            local raw_dead = in_zone and m.hp ~= nil and m.hp <= 0
-                and (m.hpp == nil or m.hpp <= 0)
-
-            local dead
-
-            if is_me then
-                dead = (me.vitals and me.vitals.hp and me.vitals.hp <= 0) and true or false
-            else
-                if raw_dead then
-                    dead_since[m.name] = dead_since[m.name] or now
-                else
-                    dead_since[m.name] = nil
-                end
-
-                dead = raw_dead
-                    and (now - dead_since[m.name]) >= DEAD_CONFIRM_SECONDS
-                    and (now - member_seen[m.name]) >= NEW_MEMBER_GRACE_SECONDS
-            end
-
-            out[#out + 1] = {
-                m = m,
-                name = m.name,
-                id = mob and mob.id or nil,
-                mob = mob,
-                job = Get_Party_Member_Job(m),
-                dist = mob and type(mob.distance) == 'number' and math.sqrt(mob.distance) or nil,
-                in_zone = in_zone,
-                dead = dead and true or false,
-                is_me = is_me,
-            }
-        end
-    end
-
-    for name in pairs(member_seen) do
-        if not present[name] then
-            member_seen[name] = nil
-            dead_since[name] = nil
-        end
-    end
-
-    return out
-end
 
 -- Party buffs packet (others only; never ourselves). Each entry is 0x30
 -- bytes from offset 0x04: id(4) index(2) ?(2) bitmask(8) buffs(32).
