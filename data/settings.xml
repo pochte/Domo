@@ -5,7 +5,9 @@
         <autotarget>false</autotarget>
         <buffs_active>true</buffs_active>
         <cure_active>true</cure_active>
+        <food_active>true</food_active>
         <rest_active>true</rest_active>
+        <selected_food />
         <semi_auto>false</semi_auto>
         <spell>Sinker Drill</spell>
         <spell_active>false</spell_active>

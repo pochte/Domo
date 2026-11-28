@@ -29,18 +29,22 @@ local texts = require('texts')
 local images = require('images')
 
 -- LAYOUT (all numbers are at scale 1.0)
-local BASE_W = 262
-local TITLE_X, TITLE_Y, TITLE_H = 14, 9, 30
-local STRIP_Y, STRIP_W, STRIP_H = 39, 238, 10
-local HEADER_H, HEADER_GAP, SECTION_GAP = 16, 6, 4
-local TAB_H, TAB_W, TAB_GAP = 20, 76, 4
-local MIN_H = 54                  -- height when minimized
-local BTN_W, BTN_H = 114, 20
-local COL_X = { 12, 136 }
-local ROW_Y0, ROW_STEP = 52, 26
+-- Wider panel + taller rows so title/status/tabs/buttons do not overlap.
+local BASE_W = 320
+local TITLE_X, TITLE_Y, TITLE_H = 12, 8, 26
+local STRIP_Y, STRIP_W, STRIP_H = 36, 296, 8
+local HEADER_H, HEADER_GAP, SECTION_GAP = 18, 6, 6
+local TAB_H, TAB_W, TAB_GAP = 22, 72, 4   -- four short-name tabs fit BASE_W
+local MIN_H = 58                  -- height when minimized
+local BTN_W, BTN_H = 142, 22
+local COL_X = { 12, 166 }
+local ROW_Y0, ROW_STEP = 58, 28
 local COLS = 2
+-- Title-row hit targets (from right edge of panel, scale 1.0)
+local CLOSE_X, MIN_X, STATUS_RIGHT = 22, 42, 52
 -- Party slots: dismiss (up to 5) + names Domo has seen summoned.
 local PERSONAL_TRUST_SLOTS, PARTY_TRUST_SLOTS = 5, 16
+local FOOD_SLOTS = 20               -- inventory food buttons on the Food tab
 local CONFIRM_SECONDS = 4         -- Go Home needs a second click inside this time
 local DEFAULT_POS = { x = 40, y = 300 }
 local DEFAULT_ICON_POS = { x = 10, y = 200 }
@@ -48,11 +52,13 @@ local ICON_SIZE = 48                  -- on-screen size of the Domo launcher ico
 local DRAG_THRESHOLD = 4
 local TIP_DELAY, TIP_WRAP, TIP_SIZE = 0.35, 38, 11
 
-local TABS = { 'Controls', 'Party Trusts', 'Settings' }
+-- Short tab labels so four tabs fit without stacking on each other.
+local TABS = { 'Controls', 'Trusts', 'Food', 'Settings' }
 local TAB_TIPS = {
     'Everyday controls for this character and the party.',
     'Party Trust Control: ask the party leader to summon or dismiss trusts.',
-    'Domo settings: skin, hunting radius, debug, save, reload and permissions.',
+    'Pick a food from inventory; Domo keeps eating it until you change or turn food off.',
+    'Domo settings: skin, UI scale, hunting radius, debug, save, reload and permissions.',
 }
 
 -- Frame pieces. FFXIV's pieces have soft edges, so they hang slightly
@@ -148,6 +154,8 @@ local function Radius_Tip(delta)
     end
 end
 
+-- Bump_UI_Scale is defined after Layout/Save_Pos (see bottom of file).
+
 local function Trust_Phrase(kind)
     return (Party_Phrase_Text and Party_Phrase_Text('trust_' .. kind)) or ('trust ' .. kind)
 end
@@ -172,7 +180,7 @@ end
 
 -- STATE (declared up here because buttons read and change it)
 local pos = { x = DEFAULT_POS.x, y = DEFAULT_POS.y }
-local scale = 1.0
+local scale = 1.20                  -- default ~20% larger so labels do not overlap
 local shown = true
 local current_tab = 1
 local minimized = false
@@ -383,9 +391,31 @@ local SECTIONS = {
     },
     {
         tab = 3,
+        title = 'FOOD: auto-eat',
+        buttons = {
+            { label = 'Food', On_Off('food', function()
+                return settings and settings.food_active ~= false
+            end), tip = 'Turn automatic food use on or off. Selection is kept.' },
+            { label = 'Refresh List', cmd = 'food list', tip = 'Re-scan inventory for food items.' },
+            { label = 'Use Profile Default', cmd = 'food clear',
+              tip = 'Clear your pick and fall back to the job profile food.' },
+        },
+    },
+    {
+        tab = 3,
+        title = 'FOOD: in inventory (click to select)',
+        foods = true,
+        buttons = {},
+    },
+    {
+        tab = 4,
         title = 'SETTINGS: Domo',
         buttons = {
             SKIN_CYCLE,
+            { label = 'UI Scale -1%', tip = 'Shrink the panel by 1%.',
+              run = function() if Bump_UI_Scale then Bump_UI_Scale(-0.01) end end },
+            { label = 'UI Scale +1%', tip = 'Enlarge the panel by 1%.',
+              run = function() if Bump_UI_Scale then Bump_UI_Scale(0.01) end end },
             { label = 'Radius -5', run = Bump_Radius(-5), tip = Radius_Tip(-5) },
             { label = 'Radius +5', run = Bump_Radius(5),  tip = Radius_Tip(5) },
             { label = 'Show Settings', cmd = 'show', tip = 'Print current settings and modes to chat.' },
@@ -395,7 +425,7 @@ local SECTIONS = {
         },
     },
     {
-        tab = 3,
+        tab = 4,
         title = 'SETTINGS: party-chat permissions',
         buttons = {
             { label = 'Allowed Players', cmd = 'trust list', tip = 'Show who may use party-chat commands.' },
@@ -406,7 +436,7 @@ local SECTIONS = {
         },
     },
     {
-        tab = 3,
+        tab = 4,
         title = 'PHRASE SETTING: invite command',
         buttons = {
             { label = 'Current Phrase', tip = 'Show the secret join phrase and how to change it.',
@@ -428,6 +458,16 @@ for _, sec in ipairs(SECTIONS) do
     elseif sec.trusts == 'party' then
         for _, slot in ipairs(Trust_Slots(PARTY_TRUST_SLOTS, false)) do
             sec.buttons[#sec.buttons + 1] = slot
+        end
+    elseif sec.foods then
+        for _ = 1, FOOD_SLOTS do
+            sec.buttons[#sec.buttons + 1] = {
+                label = '',
+                slot = true,
+                food_slot = true,
+                hidden = true,
+                tip = 'Click to select this food. Domo will keep eating it.',
+            }
         end
     end
 end
@@ -539,7 +579,7 @@ local function Status()
         return 'STOPPED', { 255, 110, 110 }
     end
     if go_home_active then
-        return 'GOING HOME', { 255, 170, 80 }
+        return 'HOME', { 255, 170, 80 }
     end
     if rez_pause_active then
         return 'REZ WAIT', { 255, 170, 80 }
@@ -574,17 +614,17 @@ end
 
 -- Shrinks the font for long labels so they stay inside the button.
 local function Label_Base(text)
-    local n = #text
+    local n = #tostring(text or '')
 
-    if n <= 11 then
-        return 11
-    elseif n <= 13 then
+    if n <= 10 then
         return 10
-    elseif n <= 16 then
+    elseif n <= 14 then
         return 9
+    elseif n <= 18 then
+        return 8
     end
 
-    return 8
+    return 7
 end
 
 -- GEOMETRY
@@ -730,7 +770,7 @@ local function Resolve_Trust_Slots()
             local k = 0
 
             for _, b in ipairs(sec.buttons) do
-                if b.slot then
+                if b.slot and not b.food_slot then
                     k = k + 1
 
                     local e = entries[k]
@@ -745,6 +785,51 @@ local function Resolve_Trust_Slots()
         end
     end
     -- Slot visibility changed: re-measure tallest tab so frame stays stable.
+    fixed_panel_height = nil
+end
+
+-- Fill Food-tab slots from inventory scan. Click selects that food.
+local function Resolve_Food_Slots()
+    local list = (Scan_Inventory_Foods and Scan_Inventory_Foods()) or {}
+    local selected = (Get_Selected_Food and Get_Selected_Food()) or ''
+    local sel_key = string.lower(selected)
+
+    for _, sec in ipairs(SECTIONS) do
+        if sec.foods then
+            local k = 0
+            for _, b in ipairs(sec.buttons) do
+                if b.food_slot then
+                    k = k + 1
+                    local e = list[k]
+                    if e then
+                        local is_sel = (sel_key ~= '' and string.lower(e.name) == sel_key)
+                        b.hidden = false
+                        b.label = (is_sel and '* ' or '') .. Short_Name(e.name)
+                            .. ' x' .. tostring(e.count)
+                        b.tip = is_sel
+                            and ('Selected: ' .. e.name .. '. Domo will keep eating this.')
+                            or ('Select ' .. e.name .. ' as your food.')
+                        b.partytext = nil
+                        local food_name = e.name
+                        b.run = function()
+                            if Set_Selected_Food then
+                                Set_Selected_Food(food_name)
+                            end
+                            if settings then
+                                settings.food_active = true
+                            end
+                            windower.add_to_chat(3, '[Domo] Will eat: ' .. food_name)
+                        end
+                    else
+                        b.hidden = true
+                        b.label = ''
+                        b.tip = nil
+                        b.run = nil
+                    end
+                end
+            end
+        end
+    end
     fixed_panel_height = nil
 end
 
@@ -771,11 +856,11 @@ local function Target_At(x, y)
     local bx, by = (x - pos.x) / scale, (y - pos.y) / scale
 
     if by <= TITLE_H then
-        if bx >= BASE_W - 34 then
+        if bx >= BASE_W - CLOSE_X - 8 then
             return 'close'
-        elseif bx >= BASE_W - 54 then
+        elseif bx >= BASE_W - MIN_X - 8 then
             return 'minimize'
-        elseif bx >= 56 then
+        elseif bx >= BASE_W - STATUS_RIGHT - 90 then
             return 'status'
         end
 
@@ -883,15 +968,15 @@ local function Layout()
     Band(O.track, cx, cy, STRIP_W * s, STRIP_H * s, PILL)
     Band(O.fill, cx, cy, (STRIP_W - 2) * s, (STRIP_H - 4) * s, FILL)
 
-    -- title row: Domo, status, minimize (-), close (x)
-    T.title:size(Font_Size(12))
+    -- title row: Domo (left) | status (right-aligned before min) | - | x
+    T.title:size(Font_Size(11))
     T.title:pos(pos.x + TITLE_X * s, pos.y + TITLE_Y * s)
-    T.status:size(Font_Size(11))
-    T.status:pos(pos.x + (BASE_W - 56) * s, pos.y + (TITLE_Y + 1) * s)
-    T.minimize:size(Font_Size(12))
-    T.minimize:pos(pos.x + (BASE_W - 46) * s, pos.y + TITLE_Y * s)
-    T.close:size(Font_Size(12))
-    T.close:pos(pos.x + (BASE_W - 24) * s, pos.y + TITLE_Y * s)
+    T.status:size(Font_Size(9))
+    T.status:pos(pos.x + (BASE_W - STATUS_RIGHT) * s, pos.y + (TITLE_Y + 2) * s)
+    T.minimize:size(Font_Size(11))
+    T.minimize:pos(pos.x + (BASE_W - MIN_X) * s, pos.y + TITLE_Y * s)
+    T.close:size(Font_Size(11))
+    T.close:pos(pos.x + (BASE_W - CLOSE_X) * s, pos.y + TITLE_Y * s)
 
     -- tabs
     for ti = 1, #TABS do
@@ -998,6 +1083,14 @@ local function Layout()
     T.close:visible(shown)
 end
 
+-- Panel scale ±1% (saved with position). Mouse wheel still steps by 5%.
+function Bump_UI_Scale(delta)
+    scale = math.max(0.5, math.min(2.5, (scale or 1.0) + (delta or 0)))
+    Layout()
+    Save_Pos()
+    windower.add_to_chat(2, string.format('[Domo] UI scale: %.0f%%', scale * 100))
+end
+
 local text_cache = {}
 
 local function Set_Text(key, obj, value)
@@ -1013,6 +1106,7 @@ local function Render()
     end
 
     Resolve_Trust_Slots()
+    Resolve_Food_Slots()
 
     local status, color = Status()
 
@@ -1545,7 +1639,7 @@ function UI_Command(command, args)
 
     if sub == 'reset' then
         pos.x, pos.y = DEFAULT_POS.x, DEFAULT_POS.y
-        scale = 1.0
+        scale = 1.20
         shown = true
         minimized = false
         current_tab = 1

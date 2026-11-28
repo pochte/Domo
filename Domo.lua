@@ -222,33 +222,7 @@ mob_spell_last_cast = {}
 Load_Profile_Logic(job)
 windower.add_to_chat(2, '[Domo] Main job: ' .. job)
 end
--- PROFILE HELPERS
-function Get_Food()
-return active_profile and active_profile.food or food
-end
-
--- True when the named food item is present in inventory (bag 0).
--- Used so a missing food item never stalls combat (continue hungry).
-function Has_Food_Available(food_name)
-    if not food_name or food_name == '' then
-        return false
-    end
-    local inv = windower.ffxi.get_items(0)
-    if not inv then
-        return false
-    end
-    local want = string.lower(tostring(food_name))
-    for slot = 1, inv.max or 80 do
-        local entry = inv[slot]
-        if entry and entry.id and entry.id > 0 and entry.count and entry.count > 0 then
-            local item = res.items and res.items[entry.id]
-            if item and item.en and string.lower(item.en) == want then
-                return true
-            end
-        end
-    end
-    return false
-end
+-- Food helpers live in Logic/FoodLogic.lua (loaded after settings).
 
 -- Session-scoped list of tools/items that ran out (reported on stop).
 session_depleted = session_depleted or {}
@@ -291,6 +265,8 @@ semi_auto = false,
 buffs_active = true,
 cure_active = true,
 rest_active = true,
+food_active = true,   -- auto-eat the selected / profile food
+selected_food = '',   -- player pick from inventory (empty = use profile default)
 }
 settings = config.load(defaults)
 -- LOAD SHARED LOGIC MODULES
@@ -301,6 +277,7 @@ settings = config.load(defaults)
 -- Debug.lua owns ALL debug logging/tracing and the /attack safety gate.
 -- It must load before TargetLogic.lua, which calls Debug.* everywhere.
 dofile(windower.addon_path .. 'debug/Debug.lua')
+dofile(windower.addon_path .. 'Logic/FoodLogic.lua')
 dofile(windower.addon_path .. 'Logic/TargetLogic.lua')
 dofile(windower.addon_path .. 'Logic/CampLogic.lua')
 dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
@@ -615,6 +592,8 @@ windower.add_to_chat(11, 'Target: ' .. settings.target)
 windower.add_to_chat(11, 'Buffs: ' .. tostring(settings.buffs_active))
 windower.add_to_chat(11, 'Auto Cure: ' .. tostring(settings.cure_active))
 windower.add_to_chat(11, 'Rest: ' .. tostring(settings.rest_active))
+windower.add_to_chat(11, 'Food: ' .. tostring(settings.food_active ~= false)
+    .. '  selected: ' .. tostring(settings.selected_food ~= '' and settings.selected_food or '(profile default)'))
 windower.add_to_chat(11, 'Location: ' .. tostring(location_mode or 'free') ..
     (emergency_regroup and ' (emergency regroup)' or ''))
 if origin_x then
@@ -645,6 +624,49 @@ if command == 'cure' then
 settings.cure_active = (args[2] ~= 'off')
 windower.add_to_chat(3, 'Auto Cure: ' .. tostring(settings.cure_active))
 return
+end
+-- Food: on|off | clear | list | <item name>
+if command == 'food' then
+    local sub = args[2] and string.lower(tostring(args[2])) or ''
+    if sub == 'on' or sub == 'off' then
+        settings.food_active = (sub == 'on')
+        windower.add_to_chat(3, '[Domo] Food: ' .. tostring(settings.food_active))
+        return
+    end
+    if sub == 'clear' or sub == 'default' then
+        settings.selected_food = ''
+        windower.add_to_chat(3, '[Domo] Food selection cleared — using profile default.')
+        return
+    end
+    if sub == 'list' or sub == '' then
+        local list = Scan_Inventory_Foods and Scan_Inventory_Foods() or {}
+        if #list == 0 then
+            windower.add_to_chat(207, '[Domo] No food items found in inventory.')
+        else
+            windower.add_to_chat(2, '[Domo] Food in inventory:')
+            for _, e in ipairs(list) do
+                local mark = (settings.selected_food or '') ~= ''
+                    and string.lower(settings.selected_food) == string.lower(e.name)
+                    and '  <selected>' or ''
+                windower.add_to_chat(2, '  ' .. e.name .. ' x' .. tostring(e.count) .. mark)
+            end
+        end
+        local cur = Get_Food and Get_Food() or nil
+        windower.add_to_chat(2, '[Domo] Active food: ' .. tostring(cur or 'none')
+            .. '  auto-eat: ' .. tostring(settings.food_active ~= false))
+        return
+    end
+    -- Treat the rest of the line as an item name.
+    local name = table.concat(raw_args, ' ', 2)
+    name = (name or ''):gsub('^["\'](.*)["\']$', '%1'):match('^%s*(.-)%s*$') or ''
+    if name ~= '' then
+        settings.selected_food = name
+        settings.food_active = true
+        windower.add_to_chat(3, '[Domo] Will eat: ' .. name)
+    else
+        windower.add_to_chat(167, '[Domo] //domo food on|off|list|clear|"Item Name"')
+    end
+    return
 end
 if command == 'range' then
 local value = tonumber(args[2])
