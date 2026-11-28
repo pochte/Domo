@@ -411,7 +411,9 @@ local SECTIONS = {
         tab = 4,
         title = 'SETTINGS: Domo',
         buttons = {
+            -- 2-col rows: Skin | Reload, Scale-/+, Radius-/+, Show | Save
             SKIN_CYCLE,
+            { label = 'Reload Domo',   cmd = 'reload', tip = 'Reload the addon; restarts if it was running.' },
             { label = 'UI Scale -1%', tip = 'Shrink the panel by 1%.',
               run = function() if Bump_UI_Scale then Bump_UI_Scale(-0.01) end end },
             { label = 'UI Scale +1%', tip = 'Enlarge the panel by 1%.',
@@ -419,9 +421,15 @@ local SECTIONS = {
             { label = 'Radius -5', run = Bump_Radius(-5), tip = Radius_Tip(-5) },
             { label = 'Radius +5', run = Bump_Radius(5),  tip = Radius_Tip(5) },
             { label = 'Show Settings', cmd = 'show', tip = 'Print current settings and modes to chat.' },
-            { label = 'Debug Log',  On_Off('debug', function() return Debug and Debug.enabled end), tip = 'Turn debug logging on or off.' },
             { label = 'Save Settings', cmd = 'save', tip = "Save this character's settings." },
-            { label = 'Reload Domo',   cmd = 'reload', tip = 'Reload the addon; restarts if it was running.' },
+        },
+    },
+    {
+        tab = 4,
+        title = 'SETTINGS: Debug',
+        buttons = {
+            { label = 'Debug Log', On_Off('debug', function() return Debug and Debug.enabled end),
+              tip = 'Turn debug logging on or off.' },
         },
     },
     {
