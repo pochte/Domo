@@ -1,6 +1,6 @@
 -- PARTYCOMMANDS
 -- Everything that lets other players (or you, via //domo) manage the party:
---   * "chicken nuggets": tell the bot the phrase and it pauses pulls, invites
+--   * "chicken nuggets": tell Domo the phrase and it pauses pulls, invites
 --     you, level-syncs the party and resummons trusts minus the slots you need.
 --   * //domo join <name> | cancel, //domo sync <name> | off
 -- Add new party commands in Party_Command() / Party_Command_Help() at the
@@ -242,7 +242,7 @@ local function Pick_Sync_Target()
         if m.name == me.name then
             ml = me.master_level or my_master_level
         else
-            local info = m.mob and party_member_info[m.mob.id]
+            local info = Get_Party_Member_Info(m)
             ml = info and info.master_level
         end
 
@@ -478,7 +478,7 @@ local function Party_Join_Run(name, run_id)
 
     -- Invite and wait for them to accept.
     if not Find_Party_Member(name) then
-        Tell(name, 'Invite sent — accept when you’re ready.')
+        Tell(name, 'Invite sent out. See you soon.')
         windower.send_command('input /pcmd add ' .. name)
     end
 
@@ -491,7 +491,7 @@ local function Party_Join_Run(name, run_id)
         end
 
         if waited >= cfg.invite_timeout then
-            Say(name .. ' never took the invite. Back to grinding.')
+            Say(name .. ' never accepted the invite. Waiting for the next request.')
             Tell(name, 'Invite timed out. Just say the phrase again when you’re ready.')
             return
         end
@@ -545,7 +545,7 @@ local function Party_Join_Run(name, run_id)
 
     for _ = 1, 8 do
         joiner = Find_Party_Member(name)
-        info = joiner and joiner.mob and party_member_info[joiner.mob.id]
+        info = joiner and Get_Party_Member_Info(joiner)
 
         if info then
             break
@@ -703,25 +703,35 @@ local function Party_Join_Reset()
 end
 
 function Party_Join_Cancel()
+    party_join_queue = {}
     if not party_join_active then
-        Say('No party join running.')
+        Say('No party join running (queue cleared).')
         return
     end
 
     party_join_run_id = party_join_run_id + 1
     Party_Join_Reset()
 
-    Say('Party join cancelled.')
+    Say('Party join cancelled (queue cleared).')
+end
+
+-- Simple FIFO queue for join requests while another join is in progress.
+party_join_queue = party_join_queue or {}
+
+local function Party_Join_Queue_Kick()
+    if party_join_active then
+        return
+    end
+    local next_name = table.remove(party_join_queue, 1)
+    if next_name then
+        Say('Starting queued join for ' .. next_name .. '.')
+        Party_Join_Begin(next_name)
+    end
 end
 
 function Party_Join_Begin(name)
     if not Start_Engine then
         Say('Start Domo first (//domo start).')
-        return false
-    end
-
-    if party_join_active then
-        Say('A party join is already running.')
         return false
     end
 
@@ -735,6 +745,20 @@ function Party_Join_Begin(name)
         return false
     end
 
+    -- Queue instead of dropping a second request mid-join.
+    if party_join_active then
+        for _, n in ipairs(party_join_queue) do
+            if string.lower(n) == string.lower(name) then
+                Say(name .. ' is already queued for a party join.')
+                return false
+            end
+        end
+        party_join_queue[#party_join_queue + 1] = name
+        Say('Join already running — queued ' .. name .. ' (' .. #party_join_queue .. ' waiting).')
+        Tell(name, 'You are queued for an invite. Hang tight.')
+        return true
+    end
+
     party_join_active = true
     party_join_name = name
     party_join_resummon_ok = false
@@ -743,15 +767,19 @@ function Party_Join_Begin(name)
     local run_id = party_join_run_id
 
     coroutine.schedule(function()
-        Party_Join_Run(name, run_id)
+        local ok, err = pcall(Party_Join_Run, name, run_id)
+        if not ok then
+            Say('Party join crashed: ' .. tostring(err) .. ' — resuming pulls.')
+        end
 
         -- Only the run that still owns the flag may clear it.
         if run_id == party_join_run_id then
             Party_Join_Reset()
+            Party_Join_Queue_Kick()
         end
     end, 0)
 
-    -- Watchdog: invalidate the run if it takes too long.
+    -- Watchdog: invalidate the run if it takes too long (rejoin hang safety).
     coroutine.schedule(function()
         coroutine.sleep(180)
 
@@ -760,6 +788,7 @@ function Party_Join_Begin(name)
 
             party_join_run_id = party_join_run_id + 1
             Party_Join_Reset()
+            Party_Join_Queue_Kick()
         end
     end, 0)
 
@@ -863,13 +892,7 @@ local DEFAULT_PHRASES = {
     tnl = 'tnl', rezzing = 'rezzing',
     trust_dismiss = 'trust dismiss', trust_summon = 'trust summon',
     inv = 'inv',
-}
-
-local DEFAULT_WARP_ITEMS = {
-    { name = 'Warp Ring',   slot = 'ring2' },
-    { name = 'Treat Staff', slot = 'main' },
-    { name = 'Warp Cudgel', slot = 'main' },
-    { name = 'Instant Warp' },
+    -- "sync <name>" is handled by prefix match in the party-chat handler.
 }
 
 local WEAKNESS_BUFF_ID = 1
@@ -1161,6 +1184,71 @@ local dead_since = {}
 local DEAD_CONFIRM_SECONDS = 4
 local NEW_MEMBER_GRACE_SECONDS = 15
 
+local function Roster()
+    local out = {}
+    local now = os.clock()
+    local present = {}
+    local party = windower.ffxi.get_party()
+    local me = windower.ffxi.get_player()
+    local info = windower.ffxi.get_info()
+
+    if not party or not me or not info then
+        return out
+    end
+
+    for _, key in ipairs(TRUST_PARTY_KEYS) do
+        local m = party[key]
+
+        if m and m.name and not Is_Trust_Member(m) then
+            local mob = m.mob
+            local is_me = (m.name == me.name)
+            local in_zone = (m.zone == nil) or (m.zone == info.zone)
+
+            present[m.name] = true
+            member_seen[m.name] = member_seen[m.name] or now
+
+            local raw_dead = in_zone and m.hp ~= nil and m.hp <= 0
+                and (m.hpp == nil or m.hpp <= 0)
+
+            local dead
+
+            if is_me then
+                dead = (me.vitals and me.vitals.hp and me.vitals.hp <= 0) and true or false
+            else
+                if raw_dead then
+                    dead_since[m.name] = dead_since[m.name] or now
+                else
+                    dead_since[m.name] = nil
+                end
+
+                dead = raw_dead
+                    and (now - dead_since[m.name]) >= DEAD_CONFIRM_SECONDS
+                    and (now - member_seen[m.name]) >= NEW_MEMBER_GRACE_SECONDS
+            end
+
+            out[#out + 1] = {
+                m = m,
+                name = m.name,
+                id = mob and mob.id or nil,
+                mob = mob,
+                job = Get_Party_Member_Job(m),
+                dist = mob and type(mob.distance) == 'number' and math.sqrt(mob.distance) or nil,
+                in_zone = in_zone,
+                dead = dead and true or false,
+                is_me = is_me,
+            }
+        end
+    end
+
+    for name in pairs(member_seen) do
+        if not present[name] then
+            member_seen[name] = nil
+            dead_since[name] = nil
+        end
+    end
+
+    return out
+end
 
 -- Party buffs packet (others only; never ourselves). Each entry is 0x30
 -- bytes from offset 0x04: id(4) index(2) ?(2) bitmask(8) buffs(32).
@@ -1633,6 +1721,7 @@ party_stats = {
     exp = 0,
     lp = 0,
     ep = 0,
+    cp = 0,
     cur = nil,
     req = nil
 }
@@ -1643,6 +1732,7 @@ function Party_Stats_Reset()
     party_stats.exp = 0
     party_stats.lp = 0
     party_stats.ep = 0
+    party_stats.cp = 0
 end
 
 local function Commas(n)
@@ -1679,14 +1769,17 @@ function Party_Print_Stats()
     local per_hr = 3600 / elapsed
 
     Stats_Out(string.format(
-        '[Domo] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s | exemplar points: %s',
+        '[Domo] Ran for %s | kills: %d (%.1f/hr)',
         Fmt_Duration(elapsed),
         s.kills,
-        s.kills * per_hr,
-        Commas(s.exp),
-        Commas(s.exp * per_hr),
-        Commas(s.lp),
-        Commas(s.ep)
+        s.kills * per_hr
+    ))
+    Stats_Out(string.format(
+        '[Domo] EXP: %s (%s/hr) | LP: %s (%s/hr) | EP: %s (%s/hr) | CP: %s (%s/hr)',
+        Commas(s.exp), Commas(math.floor(s.exp * per_hr + 0.5)),
+        Commas(s.lp), Commas(math.floor((s.lp or 0) * per_hr + 0.5)),
+        Commas(s.ep), Commas(math.floor((s.ep or 0) * per_hr + 0.5)),
+        Commas(s.cp or 0), Commas(math.floor((s.cp or 0) * per_hr + 0.5))
     ))
 
     if s.cur and s.req and s.req > 0 then
@@ -1746,6 +1839,16 @@ windower.register_event('incoming text', function(original)
     if n then
         party_stats.kills = party_stats.kills + 1
         party_stats.ep = party_stats.ep + tonumber(n)
+        return
+    end
+
+    -- Capacity Points
+    n = string.match(original,
+        me.name .. ' gains (%d+) capacity points')
+
+    if n then
+        party_stats.cp = (party_stats.cp or 0) + tonumber(n)
+        return
     end
 end)
 
@@ -1765,153 +1868,8 @@ end)
 -- GO HOME
 go_home_zoned = false
 
-local WARP_BAGS = {
-    'inventory', 'wardrobe', 'wardrobe2', 'wardrobe3', 'wardrobe4',
-    'wardrobe5', 'wardrobe6', 'wardrobe7', 'wardrobe8', 'satchel', 'sack', 'case',
-}
-
-local BAG_ID = { satchel = 5, sack = 6, case = 7 }
-
-local function Find_Item(item_id)
-    local items = windower.ffxi.get_items()
-
-    if not items then
-        return nil
-    end
-
-    for _, bag in ipairs(WARP_BAGS) do
-        local t = items[bag]
-
-        if type(t) == 'table' then
-            for i = 1, (t.max or 80) do
-                local e = t[i]
-
-                if e and e.id == item_id then
-                    return bag, i, e
-                end
-            end
-        end
-    end
-
-    return nil
-end
-
-local extdata_ok, extdata = pcall(require, 'extdata')
-
-local function Usable_Now(entry)
-    if not extdata_ok or not entry then
-        return nil
-    end
-
-    local ok, ed = pcall(extdata.decode, entry)
-
-    if ok and ed then
-        return ed.usable, ed
-    end
-
-    return nil
-end
-
-local function Wait_For_Zone(seconds)
-    local deadline = os.clock() + seconds
-
-    while os.clock() < deadline and go_home_active do
-        if go_home_zoned then
-            return true
-        end
-
-        coroutine.sleep(0.5)
-    end
-
-    return go_home_zoned
-end
-
--- Move (satchel/sack/case), equip, wait out the equip delay, then use.
-local function Warp_Via(spec)
-    local id = Item_Id(spec.name)
-
-    if not id then
-        return false
-    end
-
-    local bag, index, entry = Find_Item(id)
-
-    if not bag then
-        return false
-    end
-
-    if BAG_ID[bag] then
-        Say('Moving ' .. spec.name .. ' to inventory...')
-
-        pcall(function()
-            packets.inject(packets.new('outgoing', 0x029, {
-                ['Count'] = 1,
-                ['Bag'] = BAG_ID[bag],
-                ['Target Bag'] = 0,
-                ['Current Index'] = index,
-                ['Target Index'] = 0x52,
-            }))
-        end)
-
-        for _ = 1, 6 do
-            coroutine.sleep(1)
-            bag, index, entry = Find_Item(id)
-
-            if bag and not BAG_ID[bag] then
-                break
-            end
-        end
-
-        if not bag or BAG_ID[bag] then
-            return false
-        end
-    end
-
-    if not spec.slot and bag ~= 'inventory' then
-        return false
-    end
-
-    if spec.slot then
-        if not (entry and entry.status == 5) then
-            windower.send_command('input /equip ' .. spec.slot .. ' "' .. spec.name .. '"')
-            coroutine.sleep(2)
-        end
-
-        local started = os.clock()
-        local ready = false
-
-        while go_home_active and os.clock() - started < 35 do
-            bag, index, entry = Find_Item(id)
-
-            local usable, ed = Usable_Now(entry)
-
-            if usable == true then
-                ready = true
-                break
-            end
-
-            if ed and ed.charges_remaining == 0 then
-                return false
-            end
-
-            if usable == nil and os.clock() - started >= 12 then
-                ready = true
-                break
-            end
-
-            coroutine.sleep(1)
-        end
-
-        if not ready then
-            return false
-        end
-    end
-
-    Say('Using ' .. spec.name .. '...')
-    windower.send_command('input /item "' .. spec.name .. '" <me>')
-
-    return Wait_For_Zone(25)
-end
+-- The warp items themselves (detection, timers, equipping, using, fallbacks)
+-- live in WarpLogic.lua.
 
 local function Party_Go_Home()
     local me = windower.ffxi.get_player()
@@ -1947,24 +1905,21 @@ local function Party_Go_Home()
         end
     end, 0)
 
-    for _, spec in ipairs(Opt('go_home_items', DEFAULT_WARP_ITEMS)) do
-        if not go_home_active then
-            return
-        end
+    -- WarpLogic.lua tries every supported item and says why each one failed.
+    local warped = Warp_Home({
+        cancelled = function() return not go_home_active end,
+        say = Say,
+    })
 
-        if Warp_Via(spec) then
-            return
-        end
-    end
-
-    if not go_home_active then
+    -- Zoned: the zone-change handler below finishes up. Cancelled: nothing to do.
+    if warped or not go_home_active then
         return
     end
 
     go_home_active = false
     Start_Engine = false
 
-    print('No warp item available. Logging out.')
+    Say('No usable warp item was found. Logging out.')
     windower.send_command('input /logout')
 end
 
@@ -1975,9 +1930,20 @@ windower.register_event('zone change', function()
         go_home_active = false
         go_home_zoned = true
         Start_Engine = false
-
-        windower.add_to_chat(2, '....Stopping Domo Helper....')
-        Party_Print_Stats()
+        if Domo_Notify_Stop then
+            Domo_Notify_Stop()
+        else
+            windower.add_to_chat(2, '....Stopping Domo Helper....')
+            Party_Print_Stats()
+        end
+        -- Leader disbands the party after a successful Go Home warp.
+        if Is_Self_Party_Leader and Is_Self_Party_Leader() then
+            coroutine.schedule(function()
+                coroutine.sleep(2)
+                Say('Disbanding party after Go Home.')
+                windower.send_command('input /pcmd breakup')
+            end, 0)
+        end
     end
 end)
 
@@ -2097,20 +2063,6 @@ end
 -- PARTY-CHAT PHRASES
 local PHRASE_HANDLERS = {}
 
-PHRASE_HANDLERS.reset = function(sender)
-    if not Start_Engine then
-        return
-    end
-
-    Say('Reset from ' .. sender .. ' — re-anchoring origin here.')
-
-    windower.ffxi.run(false)
-    windower.ffxi.follow(0)
-
-    Clear_Table(unattackable_until)
-    Set_Origin()
-end
-
 PHRASE_HANDLERS.go_home = function(sender)
     if not Start_Engine or go_home_active then
         return
@@ -2126,21 +2078,163 @@ PHRASE_HANDLERS.stop = function(sender)
     end
 
     Say('Stopping (' .. sender .. ').')
-
-    windower.add_to_chat(2, '....Stopping Domo Helper....')
+    if Domo_Notify_Stop then
+        Domo_Notify_Stop()
+    else
+        windower.add_to_chat(2, '....Stopping Domo Helper....')
+        if Party_Print_Stats then
+            Party_Print_Stats()
+        end
+    end
     Start_Engine = false
 
     windower.ffxi.follow(0)
     windower.ffxi.run(false)
 end
 
+-- Background: Leader mode Start says "I'm the Leader" in party chat.
+-- Everyone else (except Semi-Auto) switches to follower mode on that name.
+windower.register_event('chat message', function(message, sender, mode)
+    if mode ~= 4 or not message or not sender then
+        return
+    end
+    local text = tostring(message)
+    if not text:find("I'm the Leader", 1, true) and not text:find("Im the Leader", 1, true) then
+        return
+    end
+    local me = windower.ffxi.get_player()
+    if not me or string.lower(sender) == string.lower(me.name) then
+        return
+    end
+    if Semi_Auto_Active and Semi_Auto_Active() then
+        return
+    end
+    settings.assist = sender
+    settings.semi_auto = false
+    settings.autotarget = false
+    windower.send_command('input /assist ' .. sender)
+    windower.add_to_chat(2, '[Domo] Following leader ' .. sender .. '.')
+end)
+
 PHRASE_HANDLERS.start = function(sender)
-    if Start_Engine then
+    -- Start = the one group command: clear hold, reset buff timers, regroup
+    -- on the leader (followers walk to leader), re-anchor origin, resume combat.
+    -- Replaces the old separate reset / rebuff / regroup / resume phrases.
+    Say('Group start from ' .. sender .. '.')
+
+    -- If the starter is not us and we are not Semi-Auto, assist them.
+    do
+        local me = windower.ffxi.get_player()
+        if me and sender and string.lower(sender) ~= string.lower(me.name)
+            and not (Semi_Auto_Active and Semi_Auto_Active())
+        then
+            settings.assist = sender
+            settings.semi_auto = false
+            settings.autotarget = false
+            windower.send_command('input /assist ' .. sender)
+        end
+    end
+
+    party_hold = false
+    regroup_active = false
+    go_home_active = false
+    rez_pause_active = false
+    party_rez_busy = false
+    rez_walking = false
+    regroup_walking = false
+    Sync_Override()
+
+    -- Reset buff timers so maintenance recasts.
+    if type(self_buff_last_cast) == 'table' then Clear_Table(self_buff_last_cast) end
+    if type(self_ability_last_cast) == 'table' then Clear_Table(self_ability_last_cast) end
+    if type(haste_last_cast) == 'table' then Clear_Table(haste_last_cast) end
+    if type(debuff_last_cast) == 'table' then Clear_Table(debuff_last_cast) end
+    if type(refresh_last_cast) == 'table' then Clear_Table(refresh_last_cast) end
+    if type(party_buff_last_cast) == 'table' then Clear_Table(party_buff_last_cast) end
+    if type(entrust_last_cast) == 'table' then Clear_Table(entrust_last_cast) end
+    if type(dispel_last_cast) == 'table' then Clear_Table(dispel_last_cast) end
+    if type(unattackable_until) == 'table' then Clear_Table(unattackable_until) end
+
+    windower.ffxi.run(false)
+    windower.ffxi.follow(0)
+
+    local party = windower.ffxi.get_party()
+    local me = windower.ffxi.get_player()
+    local leader_id = party and party.party1_leader
+    local is_leader = me and leader_id and leader_id == me.id
+
+    if is_leader or not leader_id then
+        -- Leader (or solo): re-anchor here and restart the engine.
+        if Set_Origin then Set_Origin() end
+        local claim = (Get_Play_Mode and Get_Play_Mode() == 'leader') and true or false
+        if Domo_Do_Start then
+            Domo_Do_Start({ from_party = true, announce = false, claim_leader = claim })
+        else
+            windower.send_command('Domo start fromparty')
+        end
         return
     end
 
-    Say('Starting up (' .. sender .. ').')
-    windower.send_command('Domo start')
+    -- Follower: walk to the leader, then restart once near them.
+    if Semi_Auto_Active and Semi_Auto_Active() then
+        if Domo_Do_Start then
+            Domo_Do_Start({ from_party = true, announce = false })
+        end
+        return
+    end
+
+    local leader_mob = nil
+    for _, key in ipairs(TRUST_PARTY_KEYS) do
+        local m = party and party[key]
+        if m and m.mob and m.mob.id == leader_id then
+            leader_mob = m.mob
+            break
+        end
+    end
+
+    if leader_mob and leader_mob.index then
+        party_follow_override = true
+        windower.ffxi.follow(leader_mob.index)
+        coroutine.schedule(function()
+            local deadline = os.clock() + 30
+            while os.clock() < deadline do
+                local m = windower.ffxi.get_mob_by_id(leader_id)
+                local dist = m and type(m.distance) == 'number' and math.sqrt(m.distance) or 999
+                if dist <= 6 then
+                    break
+                end
+                coroutine.sleep(0.5)
+            end
+            windower.ffxi.follow(0)
+            party_follow_override = false
+            if Set_Origin then Set_Origin() end
+            if Domo_Do_Start then
+                Domo_Do_Start({ from_party = true, announce = false })
+            else
+                windower.send_command('Domo start fromparty')
+            end
+        end, 0)
+    else
+        if Domo_Do_Start then
+            Domo_Do_Start({ from_party = true, announce = false })
+        else
+            windower.send_command('Domo start fromparty')
+        end
+    end
+end
+
+-- Legacy phrases map to Start so old macros still work.
+PHRASE_HANDLERS.reset = function(sender)
+    PHRASE_HANDLERS.start(sender)
+end
+PHRASE_HANDLERS.rebuff = function(sender)
+    PHRASE_HANDLERS.start(sender)
+end
+PHRASE_HANDLERS.regroup = function(sender)
+    PHRASE_HANDLERS.start(sender)
+end
+PHRASE_HANDLERS.resume = function(sender)
+    PHRASE_HANDLERS.start(sender)
 end
 
 PHRASE_HANDLERS.hold = function(sender)
@@ -2150,105 +2244,7 @@ PHRASE_HANDLERS.hold = function(sender)
 
     party_hold = true
 
-    Say('Holding for ' .. sender .. ' — no new pulls until someone says resume.')
-end
-
-PHRASE_HANDLERS.resume = function(sender)
-    if not Start_Engine then
-        return
-    end
-
-    regroup_run = regroup_run + 1
-    regroup_walking = false
-    regroup_active = false
-    party_hold = false
-
-    Sync_Override()
-
-    Say('Resuming — origin set here.')
-
-    windower.ffxi.follow(0)
-    Set_Origin()
-end
-
-PHRASE_HANDLERS.regroup = function(sender)
-    if not Start_Engine then
-        return
-    end
-
-    -- Semi-Auto never walks the player: just say what to do.
-    if Semi_Auto_Active and Semi_Auto_Active() then
-        Say('Go join everyone else. (' .. sender .. ' called a regroup; Semi-Auto won’t move you.)')
-        return
-    end
-
-    local party = windower.ffxi.get_party()
-    local me = windower.ffxi.get_player()
-    local leader_id = party and party.party1_leader
-
-    if not leader_id or not me then
-        return
-    end
-
-    party_hold = true
-
-    if leader_id == me.id then
-        Say('I’m the leader — holding here. Say resume when ready.')
-        return
-    end
-
-    regroup_run = regroup_run + 1
-
-    local run = regroup_run
-
-    regroup_active = true
-    regroup_walking = true
-
-    Sync_Override()
-
-    Say('Regrouping on the leader (' .. sender .. ').')
-
-    coroutine.schedule(function()
-        local deadline = os.clock() + Opt('regroup_timeout', 45)
-
-        while run == regroup_run and Start_Engine and os.clock() < deadline do
-            local leader = windower.ffxi.get_mob_by_id(leader_id)
-
-            if leader and type(leader.distance) == 'number' then
-                if math.sqrt(leader.distance) > 4 then
-                    windower.ffxi.follow(leader.index)
-                else
-                    break
-                end
-            end
-
-            coroutine.sleep(0.5)
-        end
-
-        if run == regroup_run then
-            windower.ffxi.follow(0)
-            regroup_active = false
-            regroup_walking = false
-
-            Sync_Override()
-        end
-    end, 0)
-end
-
-PHRASE_HANDLERS.rebuff = function(sender)
-    if not Start_Engine then
-        return
-    end
-
-    for _, t in ipairs({
-        self_buff_last_cast, self_ability_last_cast, haste_last_cast,
-        refresh_last_cast, party_buff_last_cast, entrust_last_cast,
-        entrust_ability_last_attempt, entrust_ability_last_success,
-    }) do
-        Clear_Table(t)
-    end
-
-    Say('Rebuffing everything (' .. sender .. ').')
+    Say('Holding for ' .. sender .. ' — no new pulls until someone says Start.')
 end
 
 PHRASE_HANDLERS.tnl = function()
@@ -2384,6 +2380,34 @@ windower.register_event('chat message', function(message, sender, mode, gm)
         return
     end
 
+    -- Follower-initiated Level Sync: party chat "sync <name>" or "sync off".
+    do
+        local sync_off = text:match('^sync%s+off$')
+        local sync_name = text:match('^sync%s+(.+)$')
+        if sync_off or sync_name then
+            if not is_self and not Party_Is_Trusted(sender) then
+                Say('Ignored "' .. text .. '" from ' .. sender .. ' (not trusted).')
+                return
+            end
+            if sync_off then
+                if Is_Self_Party_Leader and Is_Self_Party_Leader() then
+                    Clear_Level_Sync()
+                else
+                    Say('Only the party leader can turn Level Sync off.')
+                end
+                return
+            end
+            if Level_Sync_With_Trust_Recovery then
+                Level_Sync_With_Trust_Recovery(sync_name, sender)
+            elseif Is_Self_Party_Leader and Is_Self_Party_Leader() then
+                Set_Level_Sync(sync_name)
+            else
+                windower.send_command('input /p sync ' .. sync_name)
+            end
+            return
+        end
+    end
+
     for name, handler in pairs(PHRASE_HANDLERS) do
         if text == Phrase(name) then
             if not is_self and not Party_Is_Trusted(sender) then
@@ -2460,8 +2484,14 @@ function Party_Command(command, args, raw_args)
             Clear_Level_Sync()
         elseif not raw_args[2] then
             print('//domo sync <name>  |  //domo sync off')
+            print('  Uses trust recovery: dismiss -> sync -> resummon configured trusts.')
         else
-            Set_Level_Sync(raw_args[2])
+            local target = table.concat(raw_args, ' ', 2)
+            if Level_Sync_With_Trust_Recovery then
+                Level_Sync_With_Trust_Recovery(target, nil)
+            else
+                Set_Level_Sync(target)
+            end
         end
 
         return true
@@ -2534,6 +2564,34 @@ function Party_Command(command, args, raw_args)
         return true
     end
 
+    -- Add a trust name to the known list (Party Trusts tab / data/known_trusts.txt).
+    if command == 'addtrust' then
+        local name = table.concat(raw_args, ' ', 2)
+        name = (name or ''):gsub('^["\'](.*)["\']$', '%1'):match('^%s*(.-)%s*$') or ''
+        if name == '' then
+            print('//domo addtrust "Name"')
+            return true
+        end
+        if Remember_Trust_Name and Remember_Trust_Name(name) then
+            Say('Added trust "' .. name .. '" to the known list.')
+        else
+            Say('"' .. name .. '" is already on the known trust list (or invalid).')
+        end
+        return true
+    end
+
+    -- Shows which Go Home items are available and usable, without using one.
+    if command == 'warpcheck' then
+        Warp_Report()
+        return true
+    end
+
+    -- Shows whether this follower's leader has started (FollowerGate.lua).
+    if command == 'leaderstate' then
+        Follower_Gate_Report()
+        return true
+    end
+
     if command == 'party' then
         local phrase = Normalize(table.concat(raw_args, ' ', 2))
         local inv_name = Inv_Phrase_Match(phrase)
@@ -2577,6 +2635,8 @@ function Party_Command_Help()
     print('//domo trust add <name>  |  remove <name>  |  list  |  clear')
     print('  (controls who may use party commands and request a join; empty = everyone)')
     print('//domo tnl   (session time, kills, EXP, EXP to next level)')
+    print('//domo warpcheck   (which Go Home warp items you have and can use right now)')
+    print('//domo leaderstate   (followers: has the leader started yet, and is this character idle?)')
     print('//domo party <phrase>   (run a party command locally)')
     print('Party chat: reset | go home | stop | start | hold | resume | regroup | rebuff | tnl')
     print('Party chat: trust dismiss <name> (holds everyone) | trust summon <name>')

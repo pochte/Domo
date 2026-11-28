@@ -384,7 +384,8 @@ end
 function Burst_Monitor()
 	while Start_Engine do
 		local delay = 1
-		if active_profile and active_profile.magic_burst and nuke_mode ~= 'off' then
+		if active_profile and active_profile.magic_burst and nuke_mode ~= 'off'
+			and not (Follower_Idle and Follower_Idle()) then
 			delay = 0.5
 			local target = windower.ffxi.get_mob_by_target('t')
 			if target and Burst_Window_Open(target) then

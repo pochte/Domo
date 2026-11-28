@@ -8,11 +8,13 @@ packets = require('packets')
 -- MODULES & FALLBACK DEFINITIONS
 dofile(windower.addon_path .. 'settings.lua')
 dofile(windower.addon_path .. 'Logic/PlayMode.lua')
+dofile(windower.addon_path .. 'Logic/FollowerGate.lua')
+dofile(windower.addon_path .. 'Logic/WarpLogic.lua')
 dofile(windower.addon_path .. 'Logic/skillchain.lua')
 dofile(windower.addon_path .. 'Logic/magicburst.lua')
 dofile(windower.addon_path .. 'Logic/joblogic.lua')
 local loaded_job_logic = {}
--- Jobs that load HealBuffLogic.lua (cure bot, buffs, debuffs, dispel,
+-- Jobs that load HealBuffLogic.lua (automatic curing, buffs, debuffs, dispel,
 -- haste, refresh) and RestLogic.lua. Everything else keeps the inline
 -- Buff_Tick / cure code in this file. Edit this list to change it.
 local MAGE_LOGIC_JOBS = {
@@ -224,6 +226,58 @@ end
 function Get_Food()
 return active_profile and active_profile.food or food
 end
+
+-- True when the named food item is present in inventory (bag 0).
+-- Used so a missing food item never stalls combat (continue hungry).
+function Has_Food_Available(food_name)
+    if not food_name or food_name == '' then
+        return false
+    end
+    local inv = windower.ffxi.get_items(0)
+    if not inv then
+        return false
+    end
+    local want = string.lower(tostring(food_name))
+    for slot = 1, inv.max or 80 do
+        local entry = inv[slot]
+        if entry and entry.id and entry.id > 0 and entry.count and entry.count > 0 then
+            local item = res.items and res.items[entry.id]
+            if item and item.en and string.lower(item.en) == want then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Session-scoped list of tools/items that ran out (reported on stop).
+session_depleted = session_depleted or {}
+food_exhausted_notified = food_exhausted_notified or false
+stop_notified = stop_notified or false
+
+-- One-shot stop report: tools/items that ran out + final EXP.
+-- Safe to call from //domo stop, party "stop", or Go Home zone-out.
+function Domo_Notify_Stop()
+    if stop_notified then
+        return
+    end
+    stop_notified = true
+    windower.add_to_chat(2, '....Stopping Domo Helper....')
+    if session_depleted and #session_depleted > 0 then
+        local seen = {}
+        local unique = {}
+        for _, name in ipairs(session_depleted) do
+            if not seen[name] then
+                seen[name] = true
+                unique[#unique + 1] = name
+            end
+        end
+        windower.add_to_chat(207, '[Domo] Ran out of: ' .. table.concat(unique, ', '))
+    end
+    if Party_Print_Stats then
+        pcall(Party_Print_Stats)
+    end
+end
 -- SETTINGS
 defaults = {
 spell = '',
@@ -248,6 +302,7 @@ settings = config.load(defaults)
 -- It must load before TargetLogic.lua, which calls Debug.* everywhere.
 dofile(windower.addon_path .. 'debug/Debug.lua')
 dofile(windower.addon_path .. 'Logic/TargetLogic.lua')
+dofile(windower.addon_path .. 'Logic/CampLogic.lua')
 dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
 -- PartyCommands depends on TrustLogic's shared party/status helpers.
 -- Load it after both shared logic modules so its command handlers and
@@ -337,6 +392,120 @@ end
 end
 -- NOTE: Engagement_Sync() is defined once, in TargetLogic.lua.
 -- It is only scheduled from here (see //domo start).
+
+-- Full start / group-wide restart. Always clears state so a second Start
+-- is a clean slate for the whole party (no "why is nothing happening?").
+-- opts.from_party: true when triggered by party chat (do not re-broadcast).
+-- opts.announce:   true to /p start so every Domo in the party restarts.
+function Domo_Do_Start(opts)
+    opts = opts or {}
+    local player = windower.ffxi.get_player()
+    if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
+        windower.add_to_chat(
+            167,
+            '[Domo] You are dead. Stop being a floor decoration, then //domo start again.'
+        )
+        return
+    end
+
+    -- Always run inside a coroutine so a mid-run restart can yield while
+    -- existing monitors notice Start_Engine = false and exit.
+    coroutine.schedule(function()
+        local was_running = Start_Engine and true or false
+        if was_running then
+            Start_Engine = false
+            windower.ffxi.follow(0)
+            windower.ffxi.run(false)
+            coroutine.sleep(0.5)
+        end
+
+        windower.add_to_chat(2, was_running
+            and '....Restarting Domo Helper (group reset)....'
+            or '....Starting Domo Helper....')
+
+        Set_Origin()
+        if Clear_Combat_Target then
+            Clear_Combat_Target()
+        end
+        lockon_done = false
+        Start_Engine = true
+
+        if Party_Start then
+            Party_Start()
+        end
+
+        self_buff_last_cast = {}
+        self_ability_last_cast = {}
+        haste_last_cast = {}
+        debuff_last_cast = {}
+        refresh_last_cast = {}
+        party_buff_last_cast = {}
+        entrust_last_cast = {}
+        entrust_ability_last_attempt = {}
+        entrust_ability_last_success = {}
+        dispel_last_cast = {}
+        mob_spell_last_cast = {}
+        pending_cast = nil
+        session_depleted = {}
+        food_exhausted_notified = false
+        stop_notified = false
+        needed_buff_try = {}
+        path_last_distance = nil
+        path_last_progress_time = nil
+        path_stuck_alerted = false
+        origin_unreachable_since = nil
+        if Reset_Damage_Tracking then
+            Reset_Damage_Tracking()
+        end
+        death_reported = false
+        is_resting = false
+        rest_monitor_started = false
+
+        if settings.assist == '' and not settings.semi_auto and not settings.autotarget then
+            settings.autotarget = true
+            windower.add_to_chat(207, '[Domo] No mode selected -- defaulting to leader.')
+        end
+
+        Update_Job_Profile()
+        if Start_Rest_Monitor then
+            Start_Rest_Monitor()
+        end
+
+        -- Quiet start: no WS/nuke banners (use the UI / //domo show).
+        Snapshot_Trusts()
+        coroutine.schedule(Engine, 0)
+        coroutine.schedule(SC_Monitor, 0)
+        coroutine.schedule(Target_Monitor, 0)
+        coroutine.schedule(Targeting, 0)
+        coroutine.schedule(Follow_Monitor, 0)
+        if Start_Camp_Monitor then
+            Start_Camp_Monitor()
+        end
+        coroutine.schedule(Buff_Monitor, 0)
+        coroutine.schedule(Cure_Monitor, 0)
+        coroutine.schedule(Trust_Monitor, 0)
+        coroutine.schedule(Death_Monitor, 0)
+        coroutine.schedule(Engagement_Sync, 0)
+        coroutine.schedule(Burst_Monitor, 0)
+        if Party_Monitor then
+            coroutine.schedule(Party_Monitor, 0)
+        end
+
+        -- Leader mode: claim leadership in party chat so other Domo clients
+        -- switch to follower and assist this character. Semi-Auto stays put.
+        -- from_party starts still announce if THIS client is the leader mode
+        -- character who is starting (opts.claim_leader).
+        local mode = Get_Play_Mode and Get_Play_Mode() or 'leader'
+        if mode == 'leader' and (not opts.from_party or opts.claim_leader) then
+            windower.send_command('input /p I\'m the Leader')
+        end
+
+        if opts.announce and not opts.from_party then
+            windower.send_command('input /p start')
+        end
+    end, 0)
+end
+
 -- OUTGOING PACKETS
 windower.register_event('outgoing chunk', function(id, data)
 if id ~= 0x015 then return end
@@ -380,6 +549,9 @@ print('//domo join cancel')
 print('//domo sync <name>   (level sync to that party member)')
 print('//domo sync off')
 print('//domo ui   (show/hide the button panel; //domo ui reset)')
+print('//domo location free|camp   (Free Roam or Camp Mode)')
+print('//domo camp                 (save current position as camp and enable Camp Mode)')
+print('//domo stuck                (emergency regroup on leader; new camp after fight)')
 if Party_Command_Help then
 Party_Command_Help()
 end
@@ -394,85 +566,15 @@ if UI_Command and UI_Command(command, args) then
 return
 end
 if command == 'start' then
-local player = windower.ffxi.get_player()
-if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
-windower.add_to_chat(
-167,
-'[Domo] You are dead. Stop being a floor decoration, then //domo start again.'
-)
-return
-end
-if Start_Engine then return end
-windower.add_to_chat(2, '....Starting Domo Helper....')
-Set_Origin()
--- RESET TARGETLOGIC STATE
-if Clear_Combat_Target then
-Clear_Combat_Target()
-end
-lockon_done = false
-Start_Engine = true
--- Reset party-session state and start the party monitor with the main engine.
-if Party_Start then
-Party_Start()
-end
--- RESET CAST TRACKING
-self_buff_last_cast = {}
-self_ability_last_cast = {}
-haste_last_cast = {}
-debuff_last_cast = {}
-refresh_last_cast = {}
-party_buff_last_cast = {}
-entrust_last_cast = {}
-entrust_ability_last_attempt = {}
-entrust_ability_last_success = {}
-dispel_last_cast = {}
-mob_spell_last_cast = {}
-pending_cast = nil
--- RESET MOVEMENT / PATHING STATE
-path_last_distance = nil
-path_last_progress_time = nil
-path_stuck_alerted = false
-origin_unreachable_since = nil
--- RESET COMBAT / MONITOR STATE
-Reset_Damage_Tracking()
-death_reported = false
-is_resting = false
-rest_monitor_started = false
--- DEFAULT MODE
-if settings.assist == '' and not settings.semi_auto and not settings.autotarget then
-settings.autotarget = true
-windower.add_to_chat(207, '[Domo] No mode selected -- defaulting to leader.')
-end
--- JOB / TRUST INITIALIZATION
-Update_Job_Profile()
-Start_Rest_Monitor()
--- Defaults only help people who know they exist, so say what they are.
-if active_profile and active_profile.use_weaponskills then
-windower.add_to_chat(207, '[Domo] WS mode: ' .. Get_WS_Mode_Text() .. '  (//domo chainmode, //domo openmode, //domo partychain)')
-end
-local start_nuke_text = Get_Nuke_Mode_Text and Get_Nuke_Mode_Text()
-if start_nuke_text then
-windower.add_to_chat(207, '[Domo] Nuke mode: ' .. start_nuke_text .. '  (//domo burstmode, //domo freenuke)')
-end
-Snapshot_Trusts()
-coroutine.schedule(Engine, 0)
-coroutine.schedule(SC_Monitor, 0)
-coroutine.schedule(Target_Monitor, 0)
-coroutine.schedule(Targeting, 0)
-coroutine.schedule(Follow_Monitor, 0)
-coroutine.schedule(Buff_Monitor, 0)
-coroutine.schedule(Cure_Monitor, 0)
-coroutine.schedule(Trust_Monitor, 0)
-coroutine.schedule(Death_Monitor, 0)
-coroutine.schedule(Engagement_Sync, 0)
-coroutine.schedule(Burst_Monitor, 0)
-if Party_Monitor then
-coroutine.schedule(Party_Monitor, 0)
-end
+-- Group-wide start: any //domo start (or party "start") fully resets and
+-- restarts the bot cycle. If this character initiated it, broadcast so the
+-- rest of the party does the same. from_party avoids an echo loop.
+local from_party = (args[2] == 'fromparty')
+Domo_Do_Start({ from_party = from_party, announce = not from_party })
 return
 end
 if command == 'stop' then
-windower.add_to_chat(2, '....Stopping Domo Helper....')
+Domo_Notify_Stop()
 Start_Engine = false
 return
 end
@@ -511,8 +613,15 @@ windower.add_to_chat(11, 'Nuke mode: ' .. nuke_text)
 end
 windower.add_to_chat(11, 'Target: ' .. settings.target)
 windower.add_to_chat(11, 'Buffs: ' .. tostring(settings.buffs_active))
-windower.add_to_chat(11, 'Cure Bot: ' .. tostring(settings.cure_active))
+windower.add_to_chat(11, 'Auto Cure: ' .. tostring(settings.cure_active))
 windower.add_to_chat(11, 'Rest: ' .. tostring(settings.rest_active))
+windower.add_to_chat(11, 'Location: ' .. tostring(location_mode or 'free') ..
+    (emergency_regroup and ' (emergency regroup)' or ''))
+if origin_x then
+windower.add_to_chat(11, 'Origin/Camp: (' ..
+    math.floor(origin_x) .. ', ' .. math.floor(origin_y) ..
+    ') radius ' .. tostring(origin_radius))
+end
 return
 end
 if command == 'autotarget' then
@@ -534,7 +643,7 @@ return
 end
 if command == 'cure' then
 settings.cure_active = (args[2] ~= 'off')
-windower.add_to_chat(3, 'Cure Bot: ' .. tostring(settings.cure_active))
+windower.add_to_chat(3, 'Auto Cure: ' .. tostring(settings.cure_active))
 return
 end
 if command == 'range' then
@@ -547,6 +656,29 @@ windower.add_to_chat(
 )
 else
 windower.add_to_chat(2, 'Current radius: ' .. origin_radius)
+end
+return
+end
+if command == 'location' then
+local mode = args[2]
+if not mode then
+windower.add_to_chat(2, 'Location mode: ' .. tostring(location_mode or 'free'))
+return
+end
+if Set_Location_Mode then
+Set_Location_Mode(mode)
+end
+return
+end
+if command == 'camp' then
+if Set_Camp then
+Set_Camp()
+end
+return
+end
+if command == 'stuck' then
+if Camp_Regroup then
+Camp_Regroup()
 end
 return
 end
@@ -567,7 +699,18 @@ if command == 'leader' then
 settings.assist = ''
 settings.semi_auto = false
 settings.autotarget = true
-windower.add_to_chat(3, '[Domo] Leader mode -- autotarget on, assist cleared.')
+-- Force leader hunting: clear stale assist-only targeting so Targeting()
+-- falls through to the autotarget branch.
+if not combat_locked_target_id then
+    managed_target_id = nil
+    support_return_target_id = nil
+    pending_target_id = nil
+    pending_target_time = 0
+    engage_sent_target_id = nil
+    combat_lock_time = nil
+    combat_started = false
+end
+-- Quiet: mode is shown on the UI Role button.
 return
 end
 -- SEMI-AUTO
@@ -591,10 +734,7 @@ combat_lock_time = nil
 combat_started = false
 end
 windower.ffxi.follow(0)
-windower.add_to_chat(
-3,
-'[Domo] Semi-Auto mode -- you choose targets, move and engage; Domo fights once you are engaged.'
-)
+-- Quiet: Semi-Auto is shown on the UI Role button.
 return
 end
 -- FOLLOWER
@@ -659,13 +799,7 @@ if command == 'follower' then
         combat_started = false
     end
 
-    windower.add_to_chat(
-        3,
-        '[Domo] Follower mode -- assisting ' ..
-        name ..
-        ', autotarget off.'
-    )
-
+    -- Quiet: Follower mode is shown on the UI Role button.
     windower.send_command('input /assist ' .. name)
 
     if active_profile
@@ -759,7 +893,9 @@ local player = windower.ffxi.get_player()
 if player then
 Update_Job_Profile()
 buffactive = convert_buff_list(player.buffs or {})
-if isBusy < 1 then
+if Follower_Idle and Follower_Idle() then
+-- FOLLOWER SAFETY: do nothing until the leader has started.
+elseif isBusy < 1 then
 pcall(Combat)
 else
 isBusy = isBusy - 1
@@ -776,6 +912,7 @@ and not ((current_job == 'RDM' or current_job == 'GEO') and Debuff_Pending and D
 and player.status == 1
 and isBusy < 1
 and player.vitals.tp >= 1000
+and not (Follower_Idle and Follower_Idle())
 then
 local target = windower.ffxi.get_mob_by_target('t')
 if target and sc_ready and sc_ready(target.id) then
@@ -993,10 +1130,19 @@ if player.vitals.mpp > ab.max_mp_percent then
 mp_ok = false
 end
 end
-if pet_ok and mp_ok and Can_Cast_Ability(ab.name) then
+-- Haste Samba and other gated abilities: never spam out of combat.
+-- Self_Ability_Gates_Ok returns false for Haste Samba (handled by Combat).
+local gates_ok = true
+if Self_Ability_Gates_Ok then
+gates_ok = Self_Ability_Gates_Ok(ab, player)
+end
+if pet_ok and mp_ok and gates_ok and Can_Cast_Ability(ab.name) then
 Cast_Ability(ab.name)
 self_ability_last_cast[ab.name] = now
 return
+elseif due and not gates_ok then
+-- Mark the interval so we do not re-check every tick while gated.
+self_ability_last_cast[ab.name] = now
 end
 end
 end
@@ -1264,11 +1410,14 @@ end
 end
 function Buff_Monitor()
 while Start_Engine do
+-- FOLLOWER SAFETY: no buffing until the leader has started.
+if not (Follower_Idle and Follower_Idle()) then
 pcall(Buff_Tick)
+end
 coroutine.sleep(1)
 end
 end
--- CURE BOT
+-- AUTOMATIC CURING
 function Party_Has_WHM()
 local party = windower.ffxi.get_party()
 if not party then return false end
@@ -1350,7 +1499,10 @@ end
 end
 function Cure_Monitor()
 while Start_Engine do
+-- FOLLOWER SAFETY: no curing until the leader has started.
+if not (Follower_Idle and Follower_Idle()) then
 pcall(Cure_Bot_Tick)
+end
 coroutine.sleep(0.5)
 end
 end

@@ -39,9 +39,12 @@ local BTN_W, BTN_H = 114, 20
 local COL_X = { 12, 136 }
 local ROW_Y0, ROW_STEP = 52, 26
 local COLS = 2
-local PERSONAL_TRUST_SLOTS, PARTY_TRUST_SLOTS = 5, 12
+-- Party slots: dismiss (up to 5) + names Domo has seen summoned.
+local PERSONAL_TRUST_SLOTS, PARTY_TRUST_SLOTS = 5, 16
 local CONFIRM_SECONDS = 4         -- Go Home needs a second click inside this time
 local DEFAULT_POS = { x = 40, y = 300 }
+local DEFAULT_ICON_POS = { x = 10, y = 200 }
+local ICON_SIZE = 48                  -- on-screen size of the Domo launcher icon
 local DRAG_THRESHOLD = 4
 local TIP_DELAY, TIP_WRAP, TIP_SIZE = 0.35, 38, 11
 
@@ -228,16 +231,40 @@ local function Advance_Cycle(c)
     windower.add_to_chat(167, '[Domo] No other option is available for that right now.')
 end
 
-local ROLE_CYCLE = Cycle_Button('Role', 'Click to change: Leader, Follower, or Semi-Auto.', {
-    { key = 'leader',   label = 'Leader',   run = function() Run('leader') end },
-    { key = 'follower', label = 'Follower', run = function() Run('follower') end },
-    { key = 'semi',     label = 'Semi-Auto', run = function() Run('semiauto') end,
-      available = function() return Semi_Auto_Available end },
+-- Order: Semi-Auto -> Leader -> Follower (Follower skipped when solo / no one to follow).
+-- Short labels so "Mode: Leader" fits the button without clipping.
+local ROLE_CYCLE = Cycle_Button('Mode', 'Click to change: Semi-Auto, Leader, or Follower.', {
+    { key = 'semi',     label = 'Semi', run = function() Run('semiauto') end,
+      available = function() return Semi_Auto_Available ~= false end },
+    { key = 'leader',   label = 'Leader', run = function() Run('leader') end },
+    { key = 'follower', label = 'Follow', run = function() Run('follower') end,
+      available = function()
+          -- Solo or already the party leader: follower is not a useful option.
+          if Is_Party_Leader and Is_Party_Leader() then
+              local party = windower.ffxi.get_party()
+              local others = 0
+              if party then
+                  for _, key in ipairs({ 'p0', 'p1', 'p2', 'p3', 'p4', 'p5' }) do
+                      local m = party[key]
+                      if m and m.name and m.mob and not m.mob.is_npc then
+                          local me = windower.ffxi.get_player()
+                          if me and m.name ~= me.name then
+                              others = others + 1
+                          end
+                      end
+                  end
+              end
+              return others > 0
+          end
+          return true
+      end },
 }, function()
     if Get_Play_Mode then
         return Get_Play_Mode()
     end
-
+    if settings and settings.semi_auto then
+        return 'semi'
+    end
     return (settings.assist or '') ~= '' and 'follower' or 'leader'
 end)
 
@@ -285,24 +312,12 @@ local SECTIONS = {
         tab = 1,
         title = 'PARTY: you and the party',
         buttons = {
-            { label = 'Start',   party = 'start',   tip = 'You and the party start Domo.' },
+            { label = 'Start',   party = 'start',   tip = 'Group start: clear hold, regroup on leader, reset buffs, resume combat.' },
             { label = 'Stop',    party = 'stop',    tip = 'You and the party stop Domo.' },
-            { label = 'Hold',    party = 'hold',    tip = 'Stop new pulls; current fights finish.' },
-            { label = 'Resume',  party = 'resume',  tip = 'Carry on after a hold, with a new origin.' },
-            { label = 'Regroup', party = 'regroup', tip = 'Everyone moves to the leader and holds.' },
-            { label = 'Reset',   party = 'reset',   tip = 'Re-anchor the hunting origin and clear old targets.' },
-            { label = 'Rebuff',  party = 'rebuff',  tip = 'Forget buff timers so buffs are recast.' },
-            { label = 'Session Stats', party = 'tnl', tip = 'Print session statistics to chat.' },
+            { label = 'Hold',    party = 'hold',    tip = 'Pause new pulls for the whole party until Start.' },
+            { label = 'Session Stats', party = 'tnl', tip = 'Print session EXP / CP / rates to chat.' },
             { label = 'Go Home', party = 'go_home', confirm = true,
               tip = 'Warp out, stop Domo and print stats. Click twice to confirm.' },
-        },
-    },
-    {
-        tab = 1,
-        title = 'TRUSTS: your party',
-        trusts = 'personal',
-        buttons = {
-            { label = 'Refresh Trusts', cmd = 'retrust', tip = 'Re-read which trusts are in your party.' },
         },
     },
     {
@@ -310,7 +325,7 @@ local SECTIONS = {
         title = 'THIS CHARACTER: toggles',
         buttons = {
             { label = 'Buffs',      On_Off('buffs',      function() return settings.buffs_active end), tip = 'Turn buff maintenance on or off.' },
-            { label = 'Cure',       On_Off('cure',       function() return settings.cure_active end),  tip = 'Turn the cure bot on or off.' },
+            { label = 'Cure',       On_Off('cure',       function() return settings.cure_active end),  tip = 'Turn automatic curing on or off.' },
             { label = 'Rest',       On_Off('rest',       function() return settings.rest_active end),  tip = 'Turn mage resting on or off.' },
             { label = 'Autotarget', On_Off('autotarget', function() return settings.autotarget end),   tip = 'Turn automatic hunting on or off.' },
         },
@@ -318,7 +333,25 @@ local SECTIONS = {
     {
         tab = 1,
         title = 'THIS CHARACTER: modes',
-        buttons = { ROLE_CYCLE, NUKE_CYCLE, WS_CYCLE },
+        buttons = {
+            ROLE_CYCLE,
+            NUKE_CYCLE,
+            WS_CYCLE,
+            -- Camp / Free Roam (location behaviour from CampLogic.lua).
+            Cycle_Button('Camp', 'Click to change: Free Roam or Camp Mode.', {
+                { key = 'free', label = 'Free', run = function()
+                    if Set_Location_Mode then Set_Location_Mode('free') end
+                end },
+                { key = 'camp', label = 'Camp', run = function()
+                    if Set_Location_Mode then Set_Location_Mode('camp') end
+                end },
+            }, function()
+                if Is_Camp_Mode and Is_Camp_Mode() then
+                    return 'camp'
+                end
+                return 'free'
+            end),
+        },
     },
     {
         tab = 1,
@@ -336,7 +369,15 @@ local SECTIONS = {
     },
     {
         tab = 2,
-        title = 'PARTY TRUST CONTROL: ask the leader',
+        title = 'TRUSTS: your party',
+        trusts = 'personal',
+        buttons = {
+            { label = 'Refresh Trusts', cmd = 'retrust', tip = 'Re-read which trusts are in your party.' },
+        },
+    },
+    {
+        tab = 2,
+        title = 'PARTY TRUST CONTROL: dismiss / summon',
         trusts = 'party',
         buttons = {},
     },
@@ -423,6 +464,9 @@ local hover = nil                 -- button index under the mouse
 local hover_tab = nil             -- tab index under the mouse
 local pressed = nil               -- what the left button went down on
 local drag = nil                  -- { dx, dy } while dragging
+local icon_pos = { x = DEFAULT_ICON_POS.x, y = DEFAULT_ICON_POS.y }
+local icon_drag = nil             -- { dx, dy } while dragging the launcher icon
+local icon_pressed = false
 local confirm_until = 0
 local mouse_x, mouse_y = 0, 0
 local tip_key, tip_text, tip_since = nil, nil, 0
@@ -439,8 +483,8 @@ local function Load_Pos()
     end
     local line = f:read('*l')
     f:close()
-    local x, y, vis, sc, mask, tab, mini, skin = tostring(line or ''):match(
-        '^(-?%d+),(-?%d+),?(%a*),?([%d%.]*),?(%d*),?(%d*),?(%d*),?(%d*)')
+    local x, y, vis, sc, mask, tab, mini, skin, ix, iy = tostring(line or ''):match(
+        '^(-?%d+),(-?%d+),?(%a*),?([%d%.]*),?(%d*),?(%d*),?(%d*),?(%d*),?(-?%d*),?(-?%d*)')
     if x and y then
         pos.x, pos.y = tonumber(x), tonumber(y)
         shown = (vis ~= 'hidden')
@@ -448,6 +492,9 @@ local function Load_Pos()
         current_tab = math.max(1, math.min(#TABS, tonumber(tab) or 1))
         minimized = (mini == '1')
         skin_index = math.max(1, math.min(#SKINS, tonumber(skin) or 1))
+        if ix and iy and ix ~= '' and iy ~= '' then
+            icon_pos.x, icon_pos.y = tonumber(ix), tonumber(iy)
+        end
         -- A saved mask only applies if it was saved with this many sections.
         if #(mask or '') == #SECTIONS then
             for si = 1, #SECTIONS do
@@ -465,11 +512,25 @@ local function Save_Pos()
             for si = 1, #SECTIONS do
                 mask = mask .. (collapsed[si] and '1' or '0')
             end
-            f:write(string.format('%d,%d,%s,%.2f,%s,%d,%d,%d\n', pos.x, pos.y,
-                shown and 'shown' or 'hidden', scale, mask, current_tab, minimized and 1 or 0, skin_index))
+            f:write(string.format('%d,%d,%s,%.2f,%s,%d,%d,%d,%d,%d\n', pos.x, pos.y,
+                shown and 'shown' or 'hidden', scale, mask, current_tab, minimized and 1 or 0, skin_index,
+                icon_pos.x or DEFAULT_ICON_POS.x, icon_pos.y or DEFAULT_ICON_POS.y))
             f:close()
         end
     end)
+end
+
+local function In_Icon(x, y)
+    return x >= icon_pos.x and x <= icon_pos.x + ICON_SIZE
+        and y >= icon_pos.y and y <= icon_pos.y + ICON_SIZE
+end
+
+local function Place_Icon()
+    if O.icon then
+        O.icon:pos(icon_pos.x, icon_pos.y)
+        O.icon:size(ICON_SIZE, ICON_SIZE)
+        O.icon:visible(true)
+    end
 end
 
 -- STATUS
@@ -515,18 +576,56 @@ end
 local function Label_Base(text)
     local n = #text
 
-    if n <= 13 then
+    if n <= 11 then
         return 11
-    elseif n <= 16 then
+    elseif n <= 13 then
         return 10
+    elseif n <= 16 then
+        return 9
     end
 
-    return 9
+    return 8
 end
 
 -- GEOMETRY
 -- Positions are worked out at scale 1.0, top to bottom, for the current tab
 -- only; collapsed sections keep just their header.
+-- Panel HEIGHT is locked to the tallest tab so switching tabs does not
+-- rescale / jump the window frame (width is always BASE_W).
+local fixed_panel_height = nil
+
+local function Measure_Tab_Height(tab_index)
+    local y = ROW_Y0 + TAB_H + 8
+    for si, sec in ipairs(SECTIONS) do
+        if sec.tab == tab_index then
+            y = y + HEADER_H + HEADER_GAP
+            if not collapsed[si] then
+                local k = 0
+                for _, b in ipairs(sec.buttons) do
+                    if not b.hidden then
+                        k = k + 1
+                    end
+                end
+                y = y + math.ceil(math.max(k, 1) / COLS) * ROW_STEP
+            end
+            y = y + SECTION_GAP
+        end
+    end
+    return y + 6
+end
+
+local function Recompute_Fixed_Height()
+    local max_h = MIN_H
+    for ti = 1, #TABS do
+        local h = Measure_Tab_Height(ti)
+        if h > max_h then
+            max_h = h
+        end
+    end
+    -- Floor so short tabs still feel roomy; avoid huge jumps from empty slots.
+    fixed_panel_height = math.max(max_h, 220)
+end
+
 local function Compute()
     layout.buttons, layout.headers, layout.tabs = {}, {}, {}
 
@@ -559,14 +658,18 @@ local function Compute()
                     end
                 end
 
-                y = y + math.ceil(k / COLS) * ROW_STEP
+                y = y + math.ceil(math.max(k, 1) / COLS) * ROW_STEP
             end
 
             y = y + SECTION_GAP
         end
     end
 
-    layout.height = y + 6
+    if not fixed_panel_height then
+        Recompute_Fixed_Height()
+    end
+    -- Content may be shorter than the fixed frame; never shrink on tab change.
+    layout.height = math.max(y + 6, fixed_panel_height or y + 6)
 end
 
 local function Short_Name(name)
@@ -578,8 +681,8 @@ local function Short_Name(name)
 end
 
 -- Fills the trust slots. Personal section: a DIS button for each trust in
--- your party. Party section: DIS for each of those, then SMN for each trust
--- in trust_jobs (settings.lua) that is not in the party.
+-- your party. Party section: DIS for each of those, then SMN for each known
+-- trust (data/known_trusts.txt + popular defaults + past summons).
 local function Resolve_Trust_Slots()
     for _, sec in ipairs(SECTIONS) do
         if sec.trusts then
@@ -596,18 +699,24 @@ local function Resolve_Trust_Slots()
                 }
             end
 
-            local jobs = (sec.trusts == 'party') and Safe(function() return trust_jobs end) or nil
-
-            if type(jobs) == 'table' then
+            if sec.trusts == 'party' then
                 local names = {}
-
-                for name in pairs(jobs) do
-                    if not present_set[tostring(name):lower()] then
-                        names[#names + 1] = tostring(name)
+                local seen = {}
+                local function add_name(name)
+                    name = tostring(name or '')
+                    if name == '' then return end
+                    local key = name:lower()
+                    if present_set[key] or seen[key] then return end
+                    seen[key] = true
+                    names[#names + 1] = name
+                end
+                -- Only trusts Domo has seen summoned (known_trusts.txt).
+                if Get_Known_Trusts then
+                    for _, name in ipairs(Get_Known_Trusts() or {}) do
+                        add_name(name)
                     end
                 end
-
-                table.sort(names)
+                table.sort(names, function(a, b) return a:lower() < b:lower() end)
 
                 for _, name in ipairs(names) do
                     entries[#entries + 1] = {
@@ -635,6 +744,8 @@ local function Resolve_Trust_Slots()
             end
         end
     end
+    -- Slot visibility changed: re-measure tallest tab so frame stays stable.
+    fixed_panel_height = nil
 end
 
 local function Screen_Rect(r)
@@ -748,6 +859,7 @@ local function Layout()
         return
     end
 
+    Place_Icon()
     Compute()
 
     local s = scale
@@ -1147,10 +1259,58 @@ end
 -- kind: 0 move, 1 left down, 2 left up, 10 wheel. Only the left button is
 -- used; right-click is left alone for the game. Returning true keeps the
 -- click from also reaching the game underneath the panel.
+-- The launcher icon is always interactive (even when the panel is hidden).
 windower.register_event('mouse', function(kind, x, y, delta, blocked)
     mouse_x, mouse_y = x, y
 
-    if blocked or not built or not shown then
+    if blocked or not built then
+        return
+    end
+
+    -- ---- launcher icon (always on) ----
+    if icon_drag then
+        if kind == 0 then
+            icon_pos.x = math.max(0, x - icon_drag.dx)
+            icon_pos.y = math.max(0, y - icon_drag.dy)
+            Place_Icon()
+            return true
+        elseif kind == 2 then
+            icon_drag = nil
+            icon_pressed = false
+            Save_Pos()
+            return true
+        end
+        return true
+    end
+
+    if icon_pressed and kind == 0
+        and (math.abs(x - icon_pressed.x) > DRAG_THRESHOLD
+            or math.abs(y - icon_pressed.y) > DRAG_THRESHOLD)
+    then
+        icon_drag = { dx = icon_pressed.x - icon_pos.x, dy = icon_pressed.y - icon_pos.y }
+        icon_pressed = false
+        Place_Icon()
+        return true
+    end
+
+    if kind == 1 and In_Icon(x, y) then
+        icon_pressed = { x = x, y = y }
+        return true
+    end
+
+    if kind == 2 and icon_pressed then
+        icon_pressed = false
+        if In_Icon(x, y) then
+            shown = not shown
+            hover, hover_tab = nil, nil
+            Layout()
+            Save_Pos()
+        end
+        return true
+    end
+
+    -- Panel is hidden: only the icon is interactive.
+    if not shown then
         return
     end
 
@@ -1233,6 +1393,12 @@ local function Create()
     Load_Pos()
 
     local skin = ASSETS .. SKINS[skin_index].dir .. '\\'
+
+    -- Launcher icon (TrustSupport-style): always visible, click toggles panel.
+    if windower.file_exists(ASSETS .. 'domologo.png') then
+        O.icon = Make_Image(ASSETS .. 'domologo.png', ICON_SIZE, ICON_SIZE)
+        Place_Icon()
+    end
 
     -- Creation order is draw order: frame, glow, headers, tabs, pills, marks, strip.
     O.top = Make_Image(skin .. 'BgTop.png', BASE_W, 21)

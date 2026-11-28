@@ -152,7 +152,15 @@ party_commands = {
 
 -- TRUST JOBS AND SACRIFICE ORDER
 
+-- Preferred Trust names (used when the party has no trusts at Snapshot time
+-- and the profile does not override). Monberaux is included as a default
+-- healer option; players can still dismiss/summon via party chat.
+default_trusts = {
+    'Monberaux',
+}
+
 trust_jobs = {
+    ['Monberaux'] = 'WHM',
     ['Ulmia'] = 'BRD',
     ['Joachim'] = 'BRD',
     ['Koru-Moru'] = 'RDM',

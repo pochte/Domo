@@ -20,7 +20,7 @@ local function Being_Hit()
         and (os.clock() - last_damage_taken_time) <= REST_THREAT_WINDOW
 end
 -- Someone else in the party is hurt badly enough to stop resting.
--- Up to 30y counts because the Cure Bot can move closer.
+-- Up to 30y counts because automatic curing can move closer.
 -- Beyond 30y is intentionally ignored.
 local function Party_Needs_Rest_Intervention()
     local party = windower.ffxi.get_party()

@@ -30,7 +30,7 @@ JOB_PROFILES.WHM = {
 		self = true,
 	},
 
-	-- CURE BOT
+	-- AUTOMATIC CURING
 	cure_bot_active = true,
 	cure_tiers = {
 		{ max_missing = 250,  spells = { 'Cure II', 'Cure' } },

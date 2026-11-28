@@ -3,7 +3,6 @@
 -- Warrior weaponskill and buff settings.
 
 JOB_PROFILES.WAR = {
-    -- ENGAGE
     auto_engage = true,
     use_weaponskills = true,
 
@@ -49,7 +48,6 @@ JOB_PROFILES.WAR = {
         'Berserk',
         'Blood Rage',
         'Aggressor',
-        'food',
     },
 
     -- LEGACY SKILLCHAIN SETTINGS
@@ -63,8 +61,7 @@ JOB_PROFILES.WAR = {
         { 'Upheaval', 1000 },
     },
 
-    -- FOOD
-    food = 'S. Salis. Steak',
+    food = 'Red Curry Bun',
 
     -- STUCK RECOVERY
     provoke_if_stuck = false,

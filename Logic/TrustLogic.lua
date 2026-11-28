@@ -19,6 +19,10 @@ local MAX_PARTY_SIZE = 6
 -- so they are read from packet 0x0DD (party member update). Our own master
 -- level comes from 0x061 (character stats).
 party_member_info = party_member_info or {}   -- [mob id] = {job, level, master_level}
+-- The same data by lowercase name. A member who has just zoned has no entity
+-- (m.mob is nil) so the id lookup fails, but the party packet always carries
+-- the name. Master Level therefore never depends on being able to target them.
+party_member_info_by_name = party_member_info_by_name or {}
 my_master_level = my_master_level or nil
 local job_abbr_by_name = nil
 local function Job_Abbr(job_name)
@@ -50,15 +54,35 @@ if not party_info_installed then
                 return
             end
             local abbr = Job_Abbr(p['Main job'])
-            party_member_info[p.ID] = {
+            local entry = {
                 job = (abbr and abbr ~= 'NON') and abbr or nil,
                 level = p['Main job level'],
                 master_level = p['Master Level'] or 0,
             }
+            party_member_info[p.ID] = entry
+            if type(p.Name) == 'string' and p.Name ~= '' then
+                party_member_info_by_name[string.lower((p.Name:gsub('%z.*', '')))] = entry
+            end
         else
             my_master_level = p['Master Level'] or 0
         end
     end)
+end
+-- Job / level / master level of a get_party() entry from the party packets,
+-- by entity id first, then by name. nil until the game has sent it.
+function Get_Party_Member_Info(m)
+    if not m then
+        return nil
+    end
+    local id = m.mob and m.mob.id
+    local info = id and party_member_info[id]
+    if info then
+        return info
+    end
+    if type(m.name) == 'string' then
+        return party_member_info_by_name[string.lower(m.name)]
+    end
+    return nil
 end
 -- Main job ('WHM') of a get_party() entry, or nil if not known yet.
 function Get_Party_Member_Job(m)
@@ -70,16 +94,86 @@ function Get_Party_Member_Job(m)
         return direct
     end
     local id = m.mob and m.mob.id
-    if not id then
-        return nil
-    end
     local me = windower.ffxi.get_player()
-    if me and me.id == id then
+    if me and ((id and me.id == id) or (m.name and string.lower(m.name) == string.lower(me.name))) then
         return me.main_job
     end
-    local info = party_member_info[id]
+    local info = Get_Party_Member_Info(m)
     return info and info.job or nil
 end
+-- KNOWN TRUST LIST (persisted)
+-- ONLY trusts Domo has seen summoned while running. No preset catalogue.
+-- Stored in data/known_trusts.txt, one name per line.
+local KNOWN_TRUSTS_FILE = windower.addon_path .. 'data/known_trusts.txt'
+known_trusts = known_trusts or {}
+
+local function Load_Known_Trusts()
+    local set, list = {}, {}
+    local function add(name)
+        if type(name) ~= 'string' or name == '' then return end
+        local key = string.lower(name)
+        if not set[key] then
+            set[key] = true
+            list[#list + 1] = name
+        end
+    end
+    local f = io.open(KNOWN_TRUSTS_FILE, 'r')
+    if f then
+        for line in f:lines() do
+            local name = line:match('^%s*(.-)%s*$')
+            if name and name ~= '' and not name:match('^#') then
+                add(name)
+            end
+        end
+        f:close()
+    end
+    table.sort(list, function(a, b) return string.lower(a) < string.lower(b) end)
+    known_trusts = list
+    return list
+end
+
+local function Save_Known_Trusts()
+    pcall(function()
+        windower.create_dir(windower.addon_path .. 'data')
+    end)
+    local f = io.open(KNOWN_TRUSTS_FILE, 'w')
+    if not f then return false end
+    for _, n in ipairs(known_trusts or {}) do
+        f:write(n .. '\n')
+    end
+    f:close()
+    return true
+end
+
+function Remember_Trust_Name(name)
+    if type(name) ~= 'string' or name == '' then return false end
+    local key = string.lower(name)
+    for _, n in ipairs(known_trusts or {}) do
+        if string.lower(n) == key then return false end
+    end
+    known_trusts = known_trusts or {}
+    known_trusts[#known_trusts + 1] = name
+    table.sort(known_trusts, function(a, b) return string.lower(a) < string.lower(b) end)
+    Save_Known_Trusts()
+    return true
+end
+
+function Get_Known_Trusts()
+    if not known_trusts or #known_trusts == 0 then
+        Load_Known_Trusts()
+    end
+    return known_trusts
+end
+
+function Trust_Spell_Known(spell)
+    if not spell or not spell.id then return false end
+    local known = windower.ffxi.get_spells()
+    return known and known[spell.id] and true or false
+end
+
+-- Load once at file load.
+Load_Known_Trusts()
+
 -- TRUST RECORDER
 function Snapshot_Trusts()
     tracked_trusts = {}
@@ -98,6 +192,7 @@ function Snapshot_Trusts()
             and member.mob.is_npc
         then
             tracked_trusts[#tracked_trusts + 1] = member.name
+            Remember_Trust_Name(member.name)
         end
     end
     if #tracked_trusts > 0 then
@@ -203,7 +298,10 @@ function Trust_Tick()
 end
 function Trust_Monitor()
     while Start_Engine do
-        pcall(Trust_Tick)
+        -- FOLLOWER SAFETY: no trust work until the leader has started.
+        if not (Follower_Idle and Follower_Idle()) then
+            pcall(Trust_Tick)
+        end
         coroutine.sleep(1)
     end
 end
@@ -231,6 +329,115 @@ function Clear_Level_Sync()
     local me = windower.ffxi.get_player()
     windower.add_to_chat(2, '[Domo] Level sync off (takes ~30s to uncap)')
     Send_Group_Change(me and me.name or '', GROUP_CHANGE_DISABLE_LEVEL_SYNC)
+end
+
+-- Follower- or console-initiated Level Sync with Trust recovery.
+-- Sequence: hold combat -> snapshot trusts -> dismiss -> Set_Level_Sync ->
+-- wait briefly -> restore tracked_trusts and allow Trust_Tick to resummon ->
+-- release hold. Safe if sync fails (trusts still come back).
+level_sync_busy = level_sync_busy or false
+function Level_Sync_With_Trust_Recovery(name, requester)
+    name = tostring(name or ''):match('^%s*(.-)%s*$') or ''
+    if name == '' then
+        windower.add_to_chat(167, '[Domo] Level sync needs a party member name.')
+        return false
+    end
+    if level_sync_busy then
+        windower.add_to_chat(207, '[Domo] Level sync already in progress.')
+        return false
+    end
+    if not Is_Party_Leader or not Is_Party_Leader() then
+        -- Followers ask the leader via party chat; do not inject the packet.
+        windower.add_to_chat(207, '[Domo] Only the party leader can Level Sync. Asking the party.')
+        windower.send_command('input /p sync ' .. name)
+        return false
+    end
+
+    level_sync_busy = true
+    coroutine.schedule(function()
+        local who = requester and (' (for ' .. requester .. ')') or ''
+        Trust_Say('Level sync -> ' .. name .. who .. ' — holding combat, recovering trusts after.')
+        if party_hold ~= nil then
+            party_hold = true
+        end
+
+        -- Snapshot current trust roster before they vanish on sync.
+        local roster = {}
+        for i, n in ipairs(tracked_trusts or {}) do
+            roster[i] = n
+        end
+        if #roster == 0 and Snapshot_Trusts then
+            Snapshot_Trusts()
+            for i, n in ipairs(tracked_trusts or {}) do
+                roster[i] = n
+            end
+        end
+
+        -- Level Sync dismisses trusts; dismiss cleanly first when possible.
+        local party = windower.ffxi.get_party()
+        local had_trust = false
+        if party then
+            for _, key in ipairs(TRUST_PARTY_KEYS or { 'p0', 'p1', 'p2', 'p3', 'p4', 'p5' }) do
+                local m = party[key]
+                if m and m.mob and m.mob.is_npc then
+                    had_trust = true
+                    windower.send_command('input /retr ' .. m.name)
+                    coroutine.sleep(0.4)
+                end
+            end
+        end
+        if had_trust then
+            coroutine.sleep(2)
+        end
+
+        Set_Level_Sync(name)
+
+        local synced = false
+        for _ = 1, 12 do
+            coroutine.sleep(1)
+            if Has_Level_Sync and Has_Level_Sync() then
+                synced = true
+                break
+            end
+        end
+        if synced then
+            Trust_Say('Level sync is up on ' .. name .. '.')
+        else
+            Trust_Say('Level sync may not have taken on ' .. name .. ' — restoring trusts anyway. Use reset if stuck.')
+        end
+
+        -- Restore the pre-sync trust list so Trust_Tick resummons them.
+        tracked_trusts = roster
+        trust_resummon_last = {}
+        trust_recovery_casting = nil
+        party_join_resummon_ok = true
+
+        if #roster > 0 then
+            Trust_Say('Resummoning trusts: ' .. table.concat(roster, ', '))
+            local deadline = os.clock() + 90
+            while os.clock() < deadline do
+                local living = Get_Living_Trusts and Get_Living_Trusts() or {}
+                local all_up = true
+                for _, n in ipairs(roster) do
+                    if not living[n] then
+                        all_up = false
+                        break
+                    end
+                end
+                if all_up then
+                    break
+                end
+                coroutine.sleep(1)
+            end
+        end
+
+        if party_hold ~= nil then
+            party_hold = false
+        end
+        level_sync_busy = false
+        Trust_Say('Level sync sequence done — combat resumed.')
+    end, 0)
+    return true
 end
 local function Level_Sync_Buff_Id()
     local buff = res.buffs and res.buffs:with('en', 'Level Sync')
@@ -411,6 +618,11 @@ function Trust_Summon(typed)
         return
     end
     local pname = Party_Name_Of(spell)
+    -- Leader must actually know the spell. Do not pretend to summon.
+    if not Trust_Spell_Known(spell) then
+        Trust_Reply("Sorry, don't have " .. pname .. '.')
+        return
+    end
     if Find_Trust_Member({ pname, spell.en }) then
         Trust_Reply('Trust swap: ' .. pname .. ' is already in the party.')
         return
@@ -429,6 +641,7 @@ function Trust_Summon(typed)
     -- and casts it (with retries, recast and MP checks).
     tracked_trusts[#tracked_trusts + 1] = pname
     trust_resummon_last[pname] = nil
+    Remember_Trust_Name(pname)
     Trust_Reply('Trust swap: summoning ' .. pname .. '.')
 end
 -- FOLLOWER TRUST REQUEST

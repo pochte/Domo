@@ -9,7 +9,7 @@ JOB_PROFILES.SMN = {
 	haste_active = false,
 	self_buffs = {},
 
-	-- CURE BOT
+	-- AUTOMATIC CURING
 	-- Provide party healing when no WHM is present.
 	cure_bot_if_no_whm = true,
 

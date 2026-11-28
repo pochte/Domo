@@ -107,7 +107,7 @@ JOB_PROFILES.GEO = {
         Darkness = { 'Impact' },
     },
 
-    -- CURE BOT
+    -- AUTOMATIC CURING
     cure_bot_active = true,
     cure_tiers = {
         {

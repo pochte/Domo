@@ -828,10 +828,18 @@ function Buff_Tick()
             then
                 blaze_safe = false
             end
-            if pet_ok and mp_ok and blaze_safe and Can_Cast_Ability(ab.name) then
+            -- Haste Samba and other gated abilities: never spam out of combat.
+            -- Self_Ability_Gates_Ok returns false for Haste Samba (Combat owns it).
+            local gates_ok = true
+            if Self_Ability_Gates_Ok then
+                gates_ok = Self_Ability_Gates_Ok(ab, player)
+            end
+            if pet_ok and mp_ok and blaze_safe and gates_ok and Can_Cast_Ability(ab.name) then
                 Cast_Ability(ab.name)
                 self_ability_last_cast[ab.name] = now
                 return
+            elseif due and not gates_ok then
+                self_ability_last_cast[ab.name] = now
             end
         end
     end

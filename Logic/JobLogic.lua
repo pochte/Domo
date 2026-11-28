@@ -1,6 +1,20 @@
 -- JOBLOGIC
 local last_tick_error = {}
+-- FOLLOWER SAFETY: these ticks start actions (curing, buffing, resting, party
+-- jobs such as rezzing). A follower runs none of them until its leader has
+-- started (see FollowerGate.lua).
+local FOLLOWER_GATED_TICKS = {
+    Cure_Bot_Tick = true,
+    Buff_Tick = true,
+    Rest_Tick = true,
+    Party_Tick = true,
+}
+
 function Safe_Tick(name, fn)
+    if FOLLOWER_GATED_TICKS[name] and Follower_Idle and Follower_Idle() then
+        return
+    end
+
     local ok, err = pcall(fn)
     if not ok and last_tick_error[name] ~= err then
         last_tick_error[name] = err
